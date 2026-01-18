@@ -22,7 +22,7 @@ sequence:
         {% if start_time is none %}
           0
         {% else %}
-          {{ (as_timestamp(now()) - as_timestamp(start_time)) | int(0) }}
+          {{ [0, (as_timestamp(now()) - as_timestamp(start_time)) | int(0)] | max }}
         {% endif %}
       target_fan: |-
         {% if start_speed <= 1 %}
