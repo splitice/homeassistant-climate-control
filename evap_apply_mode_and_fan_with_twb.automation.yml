@@ -89,6 +89,10 @@ sequence:
         {% set Tin = states('sensor.home_temperature') | float(default=nan) %}
         {% set err = (Tin - A) if (Tin is number and A is number) else 0 %}
 
+        {# Apply max_increase_step limit to base TWB calculation first #}
+        {% set max_allowed_base = current_fan + max_inc_step %}
+        {% set base_limited = [1, [10, [base, max_allowed_base] | min] | min] | max %}
+
         {# Necessity-based boost: smaller differences need less aggressive increases #}
         {# For 0.5°C difference, a modest boost is sufficient; avoid maxing out #}
         {% set boost =
@@ -97,12 +101,8 @@ sequence:
              1 if err >= 0.8 else
              0 %}
 
-        {# Calculate desired speed with boost #}
-        {% set desired_with_boost = [1, [10, base + boost] | min] | max %}
-
-        {# Apply max_increase_step limit to prevent large jumps from current speed #}
-        {% set max_allowed = current_fan + max_inc_step %}
-        {{ [1, [10, [desired_with_boost, max_allowed] | min] | min] | max }}
+        {# Apply boost on top of the limited base #}
+        {{ [1, [10, base_limited + boost] | min] | max }}
   - choose:
       - conditions:
           - condition: template
