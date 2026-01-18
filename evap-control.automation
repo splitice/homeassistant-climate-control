@@ -1,378 +1,335 @@
-alias: "Exp: Evap Automation (v2)"
-description: Looping evap controller with restore + mode step-down
+alias: "Exp: Evap Automation (v2+)"
+description: Persistent evap controller loop w/ snapshot restore and robust fan retries
 triggers:
   - entity_id: input_boolean.automatic_control
     to: "on"
+    id: auto_on
     trigger: state
   - entity_id: input_boolean.automatic_control
     to: "off"
+    id: auto_off
     trigger: state
+  - event: start
+    id: ha_start
+    trigger: homeassistant
 actions:
   - choose:
       - conditions:
-          - condition: state
-            entity_id: input_boolean.automatic_control
-            state: "off"
+          - condition: template
+            value_template: "{{ is_state(auto_entity, 'off') }}"
         sequence:
           - target:
               entity_id: scene.evap_restore
             action: scene.turn_on
-      - conditions:
-          - condition: state
-            entity_id: input_boolean.automatic_control
-            state: "on"
-        sequence:
-          - data:
-              scene_id: evap_restore
-              snapshot_entities:
-                - climate.evap
-            action: scene.create
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: |-
-                      {{
-                        states('climate.evap') == 'off'
-                        and (states('sensor.home_temperature') | float(0)
-                             - states('input_number.target_temperature') | float(0)) > 1
-                      }}
-                sequence:
-                  - target:
-                      entity_id: climate.evap
-                    data:
-                      hvac_mode: cool
-                    action: climate.set_hvac_mode
-                  - wait_template: "{{ states('climate.evap') == 'cool' }}"
-                    timeout: "00:00:10"
-                    continue_on_timeout: true
-                  - variables:
-                      desired_fan: "5"
-                  - repeat:
-                      count: 6
+          - stop: Automatic control is off; restored snapshot.
+  - data:
+      scene_id: evap_restore
+      snapshot_entities:
+        - climate.evap
+    action: scene.create
+  - variables:
+      below_since: null
+  - repeat:
+      while:
+        - condition: template
+          value_template: "{{ is_state(auto_entity, 'on') }}"
+      sequence:
+        - wait_for_trigger:
+            - entity_id: sensor.home_temperature
+              id: temp_changed
+              trigger: state
+            - entity_id: input_number.target_temperature
+              id: setpoint_changed
+              trigger: state
+            - entity_id: input_boolean.automatic_control
+              to: "off"
+              id: auto_turned_off
+              trigger: state
+          timeout: "00:01:00"
+          continue_on_timeout: true
+        - variables:
+            wake_id: "{{ wait.trigger.id if wait.trigger is defined else 'timeout' }}"
+            tick_done: false
+            T: "{{ states(temp_entity) | float(0) }}"
+            S: "{{ states(setpoint_entity) | float(0) }}"
+            diff: >-
+              {{ (states(temp_entity) | float(0)) - (states(setpoint_entity) |
+              float(0)) }}
+            need_cooling: "{{ diff > 1.0 }}"
+            near_target_after_setpoint_change: >-
+              {{ (states(setpoint_entity) | float(0)) >= ((states(temp_entity) |
+              float(0)) - 0.5) }}
+            hvac: "{{ states(evap_entity) }}"
+            cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+            below_target: >-
+              {{ (states(temp_entity) | float(0)) < (states(setpoint_entity) |
+              float(0)) }}
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{ is_state(auto_entity, 'off') or wake_id ==
+                    'auto_turned_off' }}
+              sequence:
+                - target:
+                    entity_id: scene.evap_restore
+                  action: scene.turn_on
+                - delay: "00:00:00"
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ is_state(auto_entity, 'off') }}"
+              sequence:
+                - delay: "00:00:00"
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ below_target }}"
+              sequence:
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ below_since is none }}"
                       sequence:
-                        - target:
-                            entity_id: climate.evap
-                          data:
-                            fan_mode: "{{ desired_fan }}"
-                          action: climate.set_fan_mode
-                        - wait_template: >-
-                            {{ (state_attr('climate.evap', 'fan_mode') | string)
-                            == desired_fan }}
-                          timeout: "00:00:02"
+                        - variables:
+                            below_since: "{{ now() }}"
+            - conditions:
+                - condition: template
+                  value_template: "{{ not below_target }}"
+              sequence:
+                - variables:
+                    below_since: null
+        - variables:
+            below_secs: |-
+              {% if below_since is none %}
+                0
+              {% else %}
+                {{ (as_timestamp(now()) - as_timestamp(below_since)) | int(0) }}
+              {% endif %}
+            below_5m: "{{ below_secs >= 300 }}"
+            below_10m: "{{ below_secs >= 600 }}"
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{ not tick_done and states(evap_entity) == 'off' and
+                    need_cooling }}
+              sequence:
+                - data:
+                    entity_id: "{{ evap_entity }}"
+                    hvac_mode: cool
+                  action: climate.set_hvac_mode
+                - wait_template: "{{ states(evap_entity) == 'cool' }}"
+                  timeout: "00:00:15"
+                  continue_on_timeout: true
+                - repeat:
+                    until:
+                      - condition: template
+                        value_template: "{{ state_attr(evap_entity,'fan_mode') == '5' }}"
+                      - condition: template
+                        value_template: "{{ repeat.index >= 6 }}"
+                    sequence:
+                      - data:
+                          entity_id: "{{ evap_entity }}"
+                          fan_mode: "5"
+                        action: climate.set_fan_mode
+                      - delay: "00:00:01"
+                - variables:
+                    tick_done: true
+        - variables:
+            hvac: "{{ states(evap_entity) }}"
+            cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ not tick_done and hvac == 'fan_only' and need_cooling }}"
+              sequence:
+                - variables:
+                    keep_fan: "{{ cur_fan }}"
+                - data:
+                    entity_id: "{{ evap_entity }}"
+                    hvac_mode: cool
+                  action: climate.set_hvac_mode
+                - wait_template: "{{ states(evap_entity) == 'cool' }}"
+                  timeout: "00:00:15"
+                  continue_on_timeout: true
+                - repeat:
+                    until:
+                      - condition: template
+                        value_template: >-
+                          {{ (state_attr(evap_entity,'fan_mode') | int(1)) ==
+                          keep_fan }}
+                      - condition: template
+                        value_template: "{{ repeat.index >= 6 }}"
+                    sequence:
+                      - data:
+                          entity_id: "{{ evap_entity }}"
+                          fan_mode: "{{ keep_fan | string }}"
+                        action: climate.set_fan_mode
+                      - delay: "00:00:01"
+                - variables:
+                    tick_done: true
+        - variables:
+            hvac: "{{ states(evap_entity) }}"
+            cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{ not tick_done and below_10m and hvac == 'fan_only' and
+                    cur_fan == 1 }}
+              sequence:
+                - data:
+                    entity_id: "{{ evap_entity }}"
+                    hvac_mode: "off"
+                  action: climate.set_hvac_mode
+                - variables:
+                    tick_done: true
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{ not tick_done and below_5m and hvac == 'cool' and cur_fan
+                    == 1 }}
+              sequence:
+                - data:
+                    entity_id: "{{ evap_entity }}"
+                    hvac_mode: fan_only
+                  action: climate.set_hvac_mode
+                - wait_template: "{{ states(evap_entity) == 'fan_only' }}"
+                  timeout: "00:00:15"
+                  continue_on_timeout: true
+                - repeat:
+                    until:
+                      - condition: template
+                        value_template: "{{ state_attr(evap_entity,'fan_mode') == '1' }}"
+                      - condition: template
+                        value_template: "{{ repeat.index >= 6 }}"
+                    sequence:
+                      - data:
+                          entity_id: "{{ evap_entity }}"
+                          fan_mode: "1"
+                        action: climate.set_fan_mode
+                      - delay: "00:00:01"
+                - variables:
+                    tick_done: true
+        - variables:
+            absdiff: "{{ diff | abs }}"
+            step_mag: >-
+              {% if absdiff >= 5 %} 3 {% elif absdiff >= 2 %} 2 {% elif absdiff
+              > 1 %} 1 {% else %} 0 {% endif %}
+            step: |-
+              {% if step_mag == 0 %} 0 {% else %}
+                {% if diff > 0 %} {{ step_mag }} {% else %} {{ -step_mag }} {% endif %}
+              {% endif %}
+            would_reduce_below_1: "{{ step < 0 and (cur_fan + step) < 1 }}"
+            desired_fan: "{{ [10, [1, (cur_fan + step)] | max] | min }}"
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ not tick_done and step != 0 }}"
+              sequence:
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ would_reduce_below_1 and states(evap_entity) ==
+                            'cool' and cur_fan == 1 }}
+                      sequence:
+                        - data:
+                            entity_id: "{{ evap_entity }}"
+                            hvac_mode: fan_only
+                          action: climate.set_hvac_mode
+                        - wait_template: "{{ states(evap_entity) == 'fan_only' }}"
+                          timeout: "00:00:15"
                           continue_on_timeout: true
+                        - repeat:
+                            until:
+                              - condition: template
+                                value_template: >-
+                                  {{ state_attr(evap_entity,'fan_mode') == '1'
+                                  }}
+                              - condition: template
+                                value_template: "{{ repeat.index >= 6 }}"
+                            sequence:
+                              - data:
+                                  entity_id: "{{ evap_entity }}"
+                                  fan_mode: "1"
+                                action: climate.set_fan_mode
+                              - delay: "00:00:01"
+                        - variables:
+                            tick_done: true
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ would_reduce_below_1 and states(evap_entity) ==
+                            'fan_only' and cur_fan == 1 }}
+                      sequence:
+                        - data:
+                            entity_id: "{{ evap_entity }}"
+                            hvac_mode: "off"
+                          action: climate.set_hvac_mode
+                        - variables:
+                            tick_done: true
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ not tick_done }}"
+                      sequence:
                         - choose:
                             - conditions:
                                 - condition: template
-                                  value_template: >-
-                                    {{ (state_attr('climate.evap', 'fan_mode') |
-                                    string) == desired_fan }}
+                                  value_template: "{{ states(evap_entity) == 'off' }}"
                               sequence:
-                                - stop: Fan mode set
-                        - delay: "00:00:01"
-            default: []
-          - variables:
-              below_since_ts: 0
-          - repeat:
-              while:
-                - condition: state
-                  entity_id: input_boolean.automatic_control
-                  state: "on"
+                                - data:
+                                    entity_id: "{{ evap_entity }}"
+                                    hvac_mode: cool
+                                  action: climate.set_hvac_mode
+                                - wait_template: "{{ states(evap_entity) == 'cool' }}"
+                                  timeout: "00:00:15"
+                                  continue_on_timeout: true
+                        - repeat:
+                            until:
+                              - condition: template
+                                value_template: >-
+                                  {{ (state_attr(evap_entity,'fan_mode') |
+                                  string) == (desired_fan | string) }}
+                              - condition: template
+                                value_template: "{{ repeat.index >= 6 }}"
+                            sequence:
+                              - data:
+                                  entity_id: "{{ evap_entity }}"
+                                  fan_mode: "{{ desired_fan | string }}"
+                                action: climate.set_fan_mode
+                              - delay: "00:00:01"
+                        - variables:
+                            tick_done: true
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: |-
+                    {{ not tick_done
+                       and wake_id == 'setpoint_changed'
+                       and states(evap_entity) != 'off'
+                       and near_target_after_setpoint_change }}
               sequence:
+                - repeat:
+                    until:
+                      - condition: template
+                        value_template: "{{ state_attr(evap_entity,'fan_mode') == '1' }}"
+                      - condition: template
+                        value_template: "{{ repeat.index >= 6 }}"
+                    sequence:
+                      - data:
+                          entity_id: "{{ evap_entity }}"
+                          fan_mode: "1"
+                        action: climate.set_fan_mode
+                      - delay: "00:00:01"
                 - variables:
-                    hvac_mode: "{{ states('climate.evap') }}"
-                    cur_mode: "{{ state_attr('climate.evap', 'fan_mode') | int(1) }}"
-                    cur_temp: "{{ states('sensor.home_temperature') | float(0) }}"
-                    target_temp: "{{ states('input_number.target_temperature') | float(0) }}"
-                    diff: "{{ cur_temp - target_temp }}"
-                    need_cooling: "{{ diff > 1 }}"
-                    now_ts: "{{ as_timestamp(now()) }}"
-                    below_target: "{{ cur_temp < target_temp }}"
-                    below_since_ts: |-
-                      {% if below_target %}
-                        {% if (below_since_ts | float(0)) == 0 %}
-                          {{ now_ts }}
-                        {% else %}
-                          {{ below_since_ts }}
-                        {% endif %}
-                      {% else %}
-                        0
-                      {% endif %}
-                    mins_below: |-
-                      {% if (below_since_ts | float(0)) > 0 %}
-                        {{ (now_ts - (below_since_ts | float(0))) / 60 }}
-                      {% else %}
-                        0
-                      {% endif %}
-                    step_mag: >-
-                      {% set ad = diff | abs %} {% if ad >= 5 %} 3 {% elif ad >=
-                      2 %} 2 {% elif ad > 1 %} 1 {% else %} 0 {% endif %}
-                    step: >-
-                      {% if step_mag == 0 %} 0 {% elif diff > 0 %} {{ step_mag
-                      }} {% else %} {{ -step_mag }} {% endif %}
-                    next_mode: "{{ cur_mode + step }}"
-                - choose:
-                    - conditions:
-                        - condition: template
-                          value_template: "{{ hvac_mode == 'off' and need_cooling }}"
-                      sequence:
-                        - target:
-                            entity_id: climate.evap
-                          data:
-                            hvac_mode: cool
-                          action: climate.set_hvac_mode
-                        - wait_template: "{{ states('climate.evap') == 'cool' }}"
-                          timeout: "00:00:10"
-                          continue_on_timeout: true
-                        - variables:
-                            desired_fan: "5"
-                        - repeat:
-                            count: 6
-                            sequence:
-                              - target:
-                                  entity_id: climate.evap
-                                data:
-                                  fan_mode: "{{ desired_fan }}"
-                                action: climate.set_fan_mode
-                              - wait_template: >-
-                                  {{ (state_attr('climate.evap', 'fan_mode') |
-                                  string) == desired_fan }}
-                                timeout: "00:00:02"
-                                continue_on_timeout: true
-                              - choose:
-                                  - conditions:
-                                      - condition: template
-                                        value_template: >-
-                                          {{ (state_attr('climate.evap',
-                                          'fan_mode') | string) == desired_fan }}
-                                    sequence:
-                                      - stop: Fan mode set
-                              - delay: "00:00:01"
-                  default: []
-                - choose:
-                    - conditions:
-                        - condition: template
-                          value_template: "{{ need_cooling and hvac_mode == 'fan_only' }}"
-                      sequence:
-                        - target:
-                            entity_id: climate.evap
-                          data:
-                            hvac_mode: cool
-                          action: climate.set_hvac_mode
-                        - wait_template: "{{ states('climate.evap') == 'cool' }}"
-                          timeout: "00:00:10"
-                          continue_on_timeout: true
-                        - variables:
-                            desired_fan: "{{ cur_mode | string }}"
-                        - repeat:
-                            count: 6
-                            sequence:
-                              - target:
-                                  entity_id: climate.evap
-                                data:
-                                  fan_mode: "{{ desired_fan }}"
-                                action: climate.set_fan_mode
-                              - wait_template: >-
-                                  {{ (state_attr('climate.evap', 'fan_mode') |
-                                  string) == desired_fan }}
-                                timeout: "00:00:02"
-                                continue_on_timeout: true
-                              - choose:
-                                  - conditions:
-                                      - condition: template
-                                        value_template: >-
-                                          {{ (state_attr('climate.evap',
-                                          'fan_mode') | string) == desired_fan }}
-                                    sequence:
-                                      - stop: Fan mode set
-                              - delay: "00:00:01"
-                  default: []
-                - choose:
-                    - conditions:
-                        - condition: template
-                          value_template: >-
-                            {{ below_target and mins_below >= 10 and hvac_mode
-                            == 'fan_only' and cur_mode <= 1 }}
-                      sequence:
-                        - target:
-                            entity_id: climate.evap
-                          action: climate.turn_off
-                    - conditions:
-                        - condition: template
-                          value_template: >-
-                            {{ below_target and mins_below >= 5 and hvac_mode ==
-                            'cool' and cur_mode <= 1 }}
-                      sequence:
-                        - target:
-                            entity_id: climate.evap
-                          data:
-                            hvac_mode: fan_only
-                          action: climate.set_hvac_mode
-                        - wait_template: "{{ states('climate.evap') == 'fan_only' }}"
-                          timeout: "00:00:10"
-                          continue_on_timeout: true
-                        - variables:
-                            desired_fan: "1"
-                        - repeat:
-                            count: 6
-                            sequence:
-                              - target:
-                                  entity_id: climate.evap
-                                data:
-                                  fan_mode: "{{ desired_fan }}"
-                                action: climate.set_fan_mode
-                              - wait_template: >-
-                                  {{ (state_attr('climate.evap', 'fan_mode') |
-                                  string) == desired_fan }}
-                                timeout: "00:00:02"
-                                continue_on_timeout: true
-                              - choose:
-                                  - conditions:
-                                      - condition: template
-                                        value_template: >-
-                                          {{ (state_attr('climate.evap',
-                                          'fan_mode') | string) == desired_fan }}
-                                    sequence:
-                                      - stop: Fan mode set
-                              - delay: "00:00:01"
-                  default: []
-                - choose:
-                    - conditions:
-                        - condition: template
-                          value_template: "{{ step == 0 }}"
-                      sequence: []
-                    - conditions:
-                        - condition: template
-                          value_template: >-
-                            {{ step < 0 and cur_mode <= 1 and hvac_mode ==
-                            'cool' }}
-                      sequence:
-                        - target:
-                            entity_id: climate.evap
-                          data:
-                            hvac_mode: fan_only
-                          action: climate.set_hvac_mode
-                        - wait_template: "{{ states('climate.evap') == 'fan_only' }}"
-                          timeout: "00:00:10"
-                          continue_on_timeout: true
-                        - variables:
-                            desired_fan: "1"
-                        - repeat:
-                            count: 6
-                            sequence:
-                              - target:
-                                  entity_id: climate.evap
-                                data:
-                                  fan_mode: "{{ desired_fan }}"
-                                action: climate.set_fan_mode
-                              - wait_template: >-
-                                  {{ (state_attr('climate.evap', 'fan_mode') |
-                                  string) == desired_fan }}
-                                timeout: "00:00:02"
-                                continue_on_timeout: true
-                              - choose:
-                                  - conditions:
-                                      - condition: template
-                                        value_template: >-
-                                          {{ (state_attr('climate.evap',
-                                          'fan_mode') | string) == desired_fan }}
-                                    sequence:
-                                      - stop: Fan mode set
-                              - delay: "00:00:01"
-                    - conditions:
-                        - condition: template
-                          value_template: >-
-                            {{ step < 0 and cur_mode <= 1 and hvac_mode ==
-                            'fan_only' }}
-                      sequence:
-                        - target:
-                            entity_id: climate.evap
-                          action: climate.turn_off
-                  default:
-                    - choose:
-                        - conditions:
-                            - condition: template
-                              value_template: "{{ states('climate.evap') == 'off' }}"
-                          sequence:
-                            - target:
-                                entity_id: climate.evap
-                              data:
-                                hvac_mode: cool
-                              action: climate.set_hvac_mode
-                            - wait_template: "{{ states('climate.evap') == 'cool' }}"
-                              timeout: "00:00:10"
-                              continue_on_timeout: true
-                      default: []
-                    - variables:
-                        desired_fan: >-
-                          {% set m = next_mode | int %} {{ [1, [m, 10] | min] |
-                          max | string }}
-                    - repeat:
-                        count: 6
-                        sequence:
-                          - target:
-                              entity_id: climate.evap
-                            data:
-                              fan_mode: "{{ desired_fan }}"
-                            action: climate.set_fan_mode
-                          - wait_template: >-
-                              {{ (state_attr('climate.evap', 'fan_mode') |
-                              string) == desired_fan }}
-                            timeout: "00:00:02"
-                            continue_on_timeout: true
-                          - choose:
-                              - conditions:
-                                  - condition: template
-                                    value_template: >-
-                                      {{ (state_attr('climate.evap', 'fan_mode')
-                                      | string) == desired_fan }}
-                                sequence:
-                                  - stop: Fan mode set
-                          - delay: "00:00:01"
-                - wait_for_trigger:
-                    - entity_id: input_number.target_temperature
-                      trigger: state
-                    - entity_id: sensor.home_temperature
-                      trigger: state
-                    - entity_id: input_boolean.automatic_control
-                      to: "off"
-                      trigger: state
-                  timeout: "00:01:00"
-                  continue_on_timeout: true
-                - choose:
-                    - conditions:
-                        - condition: template
-                          value_template: |-
-                            {{
-                              wait.trigger is not none
-                              and wait.trigger.entity_id == 'input_number.target_temperature'
-                              and states('climate.evap') != 'off'
-                              and (states('input_number.target_temperature') | float(0))
-                                  >= (states('sensor.home_temperature') | float(0) - 0.5)
-                            }}
-                      sequence:
-                        - variables:
-                            desired_fan: "1"
-                        - repeat:
-                            count: 6
-                            sequence:
-                              - target:
-                                  entity_id: climate.evap
-                                data:
-                                  fan_mode: "{{ desired_fan }}"
-                                action: climate.set_fan_mode
-                              - wait_template: >-
-                                  {{ (state_attr('climate.evap', 'fan_mode') |
-                                  string) == desired_fan }}
-                                timeout: "00:00:02"
-                                continue_on_timeout: true
-                              - choose:
-                                  - conditions:
-                                      - condition: template
-                                        value_template: >-
-                                          {{ (state_attr('climate.evap',
-                                          'fan_mode') | string) == desired_fan }}
-                                    sequence:
-                                      - stop: Fan mode set
-                              - delay: "00:00:01"
-                  default: []
+                    tick_done: true
 mode: restart
+variables:
+  evap_entity: climate.evap
+  temp_entity: sensor.home_temperature
+  setpoint_entity: input_number.target_temperature
+  auto_entity: input_boolean.automatic_control
