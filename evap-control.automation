@@ -32,6 +32,7 @@ actions:
   - variables:
       wake_id: startup
       tick_done: false
+          # R1: If automatic control is off, restore previous state and exit
       T: "{{ states(temp_entity) | float(0) }}"
       S: "{{ states(setpoint_entity) | float(0) }}"
       diff: >-
@@ -41,13 +42,16 @@ actions:
       hvac: "{{ states(evap_entity) }}"
       cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
   - choose:
+          # R2: Take a snapshot of the evap state for later restore
       - conditions:
           - condition: template
             value_template: "{{ need_cooling }}"
         sequence:
           - data:
+          # R3: Initialize below_since (tracks how long temp is below setpoint)
               entity_id: "{{ evap_entity }}"
               hvac_mode: cool
+          # R4: Initialize main loop variables
             action: climate.set_hvac_mode
           - wait_template: "{{ states(evap_entity) == 'cool' }}"
             timeout: "00:00:15"
@@ -59,6 +63,7 @@ actions:
                 - condition: template
                   value_template: "{{ repeat.index >= 6 }}"
               sequence:
+          # R5: If cooling is needed, ensure HVAC is in cool mode and fan is high
                 - data:
                     entity_id: "{{ evap_entity }}"
                     fan_mode: "5"
@@ -85,6 +90,7 @@ actions:
                   - repeat:
                       until:
                         - condition: template
+              # R6: If cooling is not needed but HVAC is still in cool, reduce fan or turn off
                           value_template: "{{ state_attr(evap_entity,'fan_mode') == '1' }}"
                         - condition: template
                           value_template: "{{ repeat.index >= 6 }}"
@@ -131,11 +137,13 @@ actions:
           timeout: "00:01:00"
           continue_on_timeout: true
         - variables:
+          # R7: Main persistent control loop
             wake_id: "{{ wait.trigger.id if wait.trigger is defined else 'timeout' }}"
             tick_done: false
             T: "{{ states(temp_entity) | float(0) }}"
             S: "{{ states(setpoint_entity) | float(0) }}"
             diff: >-
+                # Wait for temperature, setpoint, or control changes
               {{ (states(temp_entity) | float(0)) - (states(setpoint_entity) |
               float(0)) }}
             need_cooling: "{{ diff > 0.5 }}"
@@ -149,6 +157,7 @@ actions:
               float(0)) }}
         - choose:
             - conditions:
+                # Update variables for this tick
                 - condition: template
                   value_template: >-
                     {{ is_state(auto_entity, 'off') or wake_id ==
@@ -166,6 +175,7 @@ actions:
                 - delay: "00:00:00"
         - choose:
             - conditions:
+                # R8: If auto turned off, restore snapshot and exit loop
                 - condition: template
                   value_template: "{{ below_target }}"
               sequence:
@@ -177,6 +187,7 @@ actions:
                         - variables:
                             below_since: "{{ now() }}"
             - conditions:
+                # R9: Track how long temperature is below setpoint
                 - condition: template
                   value_template: "{{ not below_target }}"
               sequence:
@@ -195,6 +206,7 @@ actions:
             - conditions:
                 - condition: template
                   value_template: >-
+                # R10: Calculate how long we've been below setpoint (5m/10m thresholds)
                     {{ not tick_done and states(evap_entity) == 'off' and
                     need_cooling }}
               sequence:
@@ -204,6 +216,7 @@ actions:
                   action: climate.set_hvac_mode
                 - wait_template: "{{ states(evap_entity) == 'cool' }}"
                   timeout: "00:00:15"
+                # R11: If off and need cooling, turn on and set fan high
                   continue_on_timeout: true
                 - repeat:
                     until:
@@ -232,6 +245,7 @@ actions:
                 - data:
                     entity_id: "{{ evap_entity }}"
                     hvac_mode: cool
+                # R12: If in fan_only and need cooling, switch to cool and restore fan
                   action: climate.set_hvac_mode
                 - wait_template: "{{ states(evap_entity) == 'cool' }}"
                   timeout: "00:00:15"
@@ -265,6 +279,7 @@ actions:
                 - data:
                     entity_id: "{{ evap_entity }}"
                     hvac_mode: "off"
+                # R13: If below setpoint for 10m, turn off
                   action: climate.set_hvac_mode
                 - variables:
                     tick_done: true
@@ -281,6 +296,7 @@ actions:
                   action: climate.set_hvac_mode
                 - wait_template: "{{ states(evap_entity) == 'fan_only' }}"
                   timeout: "00:00:15"
+                # R14: If below setpoint for 5m, switch from cool to fan_only
                   continue_on_timeout: true
                 - repeat:
                     until:
@@ -309,6 +325,7 @@ actions:
             desired_fan: "{{ [10, [1, (cur_fan + step)] | max] | min }}"
         - choose:
             - conditions:
+                # R15: Calculate fan step based on temperature difference
                 - condition: template
                   value_template: >-
                     {{ not tick_done and step != 0 and states(evap_entity) !=
@@ -320,6 +337,7 @@ actions:
                           value_template: >-
                             {{ would_reduce_below_1 and states(evap_entity) ==
                             'cool' and cur_fan == 1 }}
+                # R16: Adjust fan speed up/down as needed, with safe bounds
                       sequence:
                         - data:
                             entity_id: "{{ evap_entity }}"
@@ -390,6 +408,7 @@ actions:
                     until:
                       - condition: template
                         value_template: "{{ state_attr(evap_entity,'fan_mode') == '1' }}"
+                # R17: If setpoint changed and now near target, set fan to 1
                       - condition: template
                         value_template: "{{ repeat.index >= 6 }}"
                     sequence:
