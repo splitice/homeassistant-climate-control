@@ -39,7 +39,7 @@ fields:
     description: >-
       Optional. Maximum fan speed increase from current speed. Prevents noise
       from sudden large increases.
-    example: 4
+    example: 3
 sequence:
   - variables:
       e: "{{ evap_entity }}"
@@ -96,9 +96,10 @@ sequence:
         {# Necessity-based boost: smaller differences need less aggressive increases #}
         {# For 0.5°C difference, a modest boost is sufficient; avoid maxing out #}
         {% set boost =
-             4 if err >= 3 else
-             2 if err >= 1.5 else
-             1 if err >= 0.8 else
+             10 if err >= 3 else
+             4 if err >= 2 else
+             2 if err >= 1 else
+             1 if err >= 0.6 else
              0 %}
 
         {# Apply boost on top of the limited base #}
