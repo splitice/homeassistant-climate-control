@@ -108,15 +108,15 @@ sequence:
           - condition: template
             value_template: "{{ want_mode is not none and want_mode == 'off' }}"
         sequence:
-        - repeat:
-            until:
+          - repeat:
+              until:
                 - condition: template
-                value_template: >-
+                  value_template: >-
                     {{ state_attr(e,'fan_mode') == (desired_fan | string) or
                     repeat.index >= 20 }}
-            sequence:
+              sequence:
                 - action: climate.set_fan_mode
-                data:
+                  data:
                     entity_id: "{{ e }}"
                     fan_mode: "{{ desired_fan }}"
                 - delay: "00:00:01"

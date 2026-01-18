@@ -45,13 +45,13 @@ actions:
       cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
 
   - choose:
-    # detect if currently fan only, if so set fan_only_since to now()
-    - conditions:
-      - condition: template
-        value_template: "{{ hvac == 'fan_only' }}"
-      sequence:
-      - variables:
-          fan_only_since: "{{ now() }}"
+      # detect if currently fan only, if so set fan_only_since to now()
+      - conditions:
+          - condition: template
+            value_template: "{{ hvac == 'fan_only' }}"
+        sequence:
+          - variables:
+              fan_only_since: "{{ now() }}"
 
   - choose:
       - conditions:
