@@ -1,4 +1,4 @@
-alias: evap_apply_mode_and_fan_with_twb
+alias: evap_maintain_temperature
 mode: queued
 fields:
   evap_entity:
@@ -13,20 +13,17 @@ fields:
   outdoor_temp_entity:
     description: Outdoor dry-bulb temp sensor (°C)
     example: sensor.viewbank_temp
-  outdoor_rh_entity:
-    description: Outdoor RH sensor (%)
-    example: sensor.viewbank_humidity
   twb_sensor:
-    description: Optional. Wet bulb temperature sensor (°C). If not provided, Twb is calculated inline.
+    description: Wet bulb temperature sensor (°C)
     example: sensor.evap_twb_viewbank
   fan_mode:
     description: >-
       Optional. If provided, forces this fan speed (string/number 1-10). If
-      omitted, Twb scaling is used.
+      omitted, Twb scaling is used with minimal adjustments.
     example: "5"
   aim_offset:
-    description: Optional. Adds to setpoint to reduce undershoot.
-    example: 0.3
+    description: Optional. Target offset to prevent oscillation. Defaults to 0.15°C for maintain mode.
+    example: 0.15
   eta_1:
     description: Optional. Saturation efficiency at fan speed 1
     example: 0.85
@@ -38,46 +35,32 @@ fields:
       Optional. If (B - Twb) < this, treat evap as ineffective and return high
       fan.
     example: 1
-  max_increase_step:
+  fan_change_threshold:
     description: >-
-      Optional. Maximum fan speed increase from current speed. Prevents noise
-      from sudden large increases.
-    example: 3
+      Optional. Temperature error (°C) required to change fan speed. Defaults to 0.2°C.
+      This prevents frequent fan speed changes when maintaining temperature.
+    example: 0.2
 sequence:
   - variables:
       e: "{{ evap_entity }}"
       want_mode: "{{ hvac_mode | default(none) }}"
       forced_fan: "{{ fan_mode | default(none) }}"
-      aim_offset_v: "{{ aim_offset | default(0.3) | float }}"
+      aim_offset_v: "{{ aim_offset | default(0.15) | float }}"
       eta1: "{{ eta_1 | default(0.85) | float }}"
       eta10: "{{ eta_10 | default(0.65) | float }}"
       min_d: "{{ min_delta_db_wb | default(1.0) | float }}"
-      max_inc_step: "{{ max_increase_step | default(4) | int }}"
+      fan_threshold: "{{ fan_change_threshold | default(0.2) | float }}"
       current_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
       A: "{{ states(setpoint_entity) | float(default=nan) }}"
       B: "{{ states(outdoor_temp_entity) | float(default=nan) }}"
-      RH: "{{ states(outdoor_rh_entity) | float(default=nan) }}"
-      Twb: |-
-        {% if twb_sensor is defined and twb_sensor is not none %}
-          {{ states(twb_sensor) | float(default=nan) }}
-        {% elif B is not number or RH is not number or RH <= 0 %}
-          {{ nan }}
-        {% else %}
-          {{
-            (
-              B * (0.151977 * (RH + 8.313659) ** 0.5) | atan
-              + (B + RH) | atan
-              - (RH - 1.676331) | atan
-              + 0.00391838 * RH ** 1.5 * (0.023101 * RH) | atan
-              - 4.686035
-            )
-          }}
-        {% endif %}
+      Twb: "{{ states(twb_sensor) | float(default=nan) }}"
+      Tin: "{{ states('sensor.home_temperature') | float(default=nan) }}"
+      temp_error: "{{ (Tin - A) if (Tin is number and A is number) else 0 }}"
       desired_fan_calc: |-
         {% if forced_fan is not none %}
           {{ forced_fan | int(1) }}
         {% elif A is not number or B is not number or Twb is not number %}
-          5
+          {{ current_fan }}
         {% else %}
           {% set Aaim = A + aim_offset_v %}
           {% set d = B - Twb %}
@@ -89,26 +72,25 @@ sequence:
             {{ [1, [10, (s | round(0))] | min] | max }}
           {% endif %}
         {% endif %}
+      # In maintain mode, only change fan speed if temperature error exceeds threshold
       desired_fan: |-
-        {% set base = desired_fan_calc | int(5) %}
-        {% set Tin = states('sensor.home_temperature') | float(default=nan) %}
-        {% set err = (Tin - A) if (Tin is number and A is number) else 0 %}
-
-        {# Apply max_increase_step limit to base TWB calculation first #}
-        {% set max_allowed_base = current_fan + max_inc_step %}
-        {% set base_limited = [1, [10, [base, max_allowed_base] | min] | min] | max %}
-
-        {# Necessity-based boost: smaller differences need less aggressive increases #}
-        {# For 0.5°C difference, a modest boost is sufficient; avoid maxing out #}
-        {% set boost =
-             10 if err >= 3 else
-             4 if err >= 2 else
-             2 if err >= 1 else
-             1 if err >= 0.6 else
-             0 %}
-
-        {# Apply boost on top of the limited base #}
-        {{ [1, [10, base_limited + boost] | min] | max }}
+        {% set base = desired_fan_calc | int(current_fan) %}
+        {% set err = temp_error | float(0) %}
+        
+        {# If temperature is within threshold of setpoint, maintain current fan speed #}
+        {% if err | abs <= fan_threshold %}
+          {{ current_fan }}
+        {# Only increase fan if temperature rises significantly above setpoint #}
+        {% elif err > fan_threshold %}
+          {# Temperature is too high, increase fan speed by 1 step max #}
+          {{ [10, current_fan + 1, base] | max }}
+        {# Only decrease fan if temperature is well below setpoint #}
+        {% elif err < -fan_threshold %}
+          {# Temperature is comfortably below setpoint, can decrease by 1 step #}
+          {{ [1, current_fan - 1] | max }}
+        {% else %}
+          {{ current_fan }}
+        {% endif %}
   - choose:
       - conditions:
           - condition: template
@@ -138,4 +120,23 @@ sequence:
                     entity_id: "{{ e }}"
                     fan_mode: "{{ desired_fan }}"
                 - delay: "00:00:01"
-description: ""
+      - conditions:
+          - condition: template
+            value_template: "{{ desired_fan != current_fan }}"
+        sequence:
+          - repeat:
+              until:
+                - condition: template
+                  value_template: >-
+                    {{ state_attr(e,'fan_mode') == (desired_fan | string) or
+                    repeat.index >= 20 }}
+              sequence:
+                - action: climate.set_fan_mode
+                  data:
+                    entity_id: "{{ e }}"
+                    fan_mode: "{{ desired_fan }}"
+                - delay: "00:00:01"
+description: >-
+  Maintain temperature mode with minimal fan speed changes. Only adjusts fan speed
+  when temperature error exceeds threshold (default 0.2°C). Uses wet bulb temperature
+  sensor for efficiency calculations and maintains stable operation.
