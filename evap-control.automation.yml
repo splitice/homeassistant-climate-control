@@ -244,6 +244,7 @@ actions:
                     {{ not tick_done and below_5m and hvac == 'cool' }}
               sequence:
                 - variables:
+                    fan_only_since: "{{ now() }}"
                     fan_only_start_speed: "{{ cur_fan }}"
                 - action: script.evap_apply_mode_and_fan_with_twb
                   data:
