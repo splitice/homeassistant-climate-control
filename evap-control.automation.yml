@@ -97,7 +97,7 @@ actions:
           value_template: "{{ is_state(auto_entity, 'on') }}"
       sequence:
         - wait_for_trigger:
-            - entity_id: sensor.home_temperature
+            - entity_id: sensor.home_feels_like
               id: temp_changed
               trigger: state
             - entity_id: input_number.target_temperature
@@ -402,7 +402,7 @@ actions:
 mode: restart
 variables:
   evap_entity: climate.evap
-  temp_entity: sensor.home_temperature
+  temp_entity: sensor.home_feels_like
   setpoint_entity: input_number.target_temperature
   auto_entity: input_boolean.automatic_control
   outdoor_temp_entity: sensor.viewbank_temp

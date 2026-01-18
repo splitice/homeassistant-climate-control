@@ -8,7 +8,7 @@ This implementation adds a "maintain temperature mode" that provides stable fan 
 ### Required Entities
 Ensure the following entities are configured in your Home Assistant:
 - `climate.evap` - Your evaporative cooler
-- `sensor.home_temperature` - Indoor temperature sensor
+- `sensor.home_feels_like` - Indoor "feels like" temperature sensor
 - `input_number.target_temperature` - Target temperature control
 - `input_boolean.automatic_control` - Automation control toggle
 - `sensor.viewbank_temp` - Outdoor temperature sensor (adjust name in automation)

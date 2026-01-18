@@ -223,7 +223,7 @@ Fan:   8 ──┬─── 6 ──┬─── 4 ──┬─── 3 ──�
 ├────────────────────────────────────────────────────┤
 │                                                    │
 │  Input Entities:                                   │
-│    • sensor.home_temperature    (Indoor temp)      │
+│    • sensor.home_feels_like     (Indoor "feels like" temp) │
 │    • sensor.viewbank_temp       (Outdoor temp)     │
 │    • sensor.viewbank_humidity   (Outdoor RH)       │
 │    • sensor.evap_twb_viewbank   (Calculated Twb)   │

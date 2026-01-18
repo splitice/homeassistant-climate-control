@@ -54,7 +54,7 @@ sequence:
       A: "{{ states(setpoint_entity) | float(default=nan) }}"
       B: "{{ states(outdoor_temp_entity) | float(default=nan) }}"
       Twb: "{{ states(twb_sensor) | float(default=nan) }}"
-      Tin: "{{ states('sensor.home_temperature') | float(default=nan) }}"
+      Tin: "{{ states('sensor.home_feels_like') | float(default=nan) }}"
       temp_error: "{{ (Tin - A) if (Tin is number and A is number) else 0 }}"
       desired_fan_calc: |-
         {% if forced_fan is not none %}

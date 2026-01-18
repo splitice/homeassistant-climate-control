@@ -73,7 +73,7 @@ This automation controls an evaporative cooler to maintain a target temperature,
 The automation requires the following Home Assistant entities to be configured:
 
 - `climate.evap` - The evaporative cooler climate entity
-- `sensor.home_temperature` - Indoor temperature sensor
+- `sensor.home_feels_like` - Indoor "feels like" temperature sensor (accounts for humidity and evaporative cooling effect)
 - `input_number.target_temperature` - Target temperature setpoint
 - `input_boolean.automatic_control` - Toggle for automatic control
 - `sensor.viewbank_temp` - Outdoor dry-bulb temperature sensor (example name - replace with your sensor)

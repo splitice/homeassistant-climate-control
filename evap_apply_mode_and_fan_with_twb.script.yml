@@ -91,7 +91,7 @@ sequence:
         {% endif %}
       desired_fan: |-
         {% set base = desired_fan_calc | int(5) %}
-        {% set Tin = states('sensor.home_temperature') | float(default=nan) %}
+        {% set Tin = states('sensor.home_feels_like') | float(default=nan) %}
         {% set err = (Tin - A) if (Tin is number and A is number) else 0 %}
 
         {# Apply max_increase_step limit to base TWB calculation first #}
