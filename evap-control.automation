@@ -30,6 +30,8 @@ actions:
     action: scene.create
   - variables:
       below_since: null
+      fan_only_since: null
+      fan_only_fan_level: null
   - variables:
       wake_id: startup
       tick_done: false
@@ -73,46 +75,17 @@ actions:
           - condition: template
             value_template: "{{ hvac == 'cool' and not need_cooling }}"
         sequence:
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ cur_fan == 1 }}"
-                sequence:
-                  - data:
-                      entity_id: "{{ evap_entity }}"
-                      hvac_mode: fan_only
-                    action: climate.set_hvac_mode
-                  - wait_template: "{{ states(evap_entity) == 'fan_only' }}"
-                    timeout: "00:00:15"
-                    continue_on_timeout: true
-                  - repeat:
-                      until:
-                        - condition: template
-                          value_template: "{{ state_attr(evap_entity,'fan_mode') == '1' }}"
-                        - condition: template
-                          value_template: "{{ repeat.index >= 6 }}"
-                      sequence:
-                        - data:
-                            entity_id: "{{ evap_entity }}"
-                            fan_mode: "1"
-                          action: climate.set_fan_mode
-                        - delay: "00:00:01"
-              - conditions:
-                  - condition: template
-                    value_template: "{{ cur_fan != 1 }}"
-                sequence:
-                  - repeat:
-                      until:
-                        - condition: template
-                          value_template: "{{ state_attr(evap_entity,'fan_mode') == '1' }}"
-                        - condition: template
-                          value_template: "{{ repeat.index >= 6 }}"
-                      sequence:
-                        - data:
-                            entity_id: "{{ evap_entity }}"
-                            fan_mode: "1"
-                          action: climate.set_fan_mode
-                        - delay: "00:00:01"
+          # R6: Switch to fan_only to dry the pads, maintaining current fan level
+          - variables:
+              fan_only_since: "{{ now() }}"
+              fan_only_fan_level: "{{ cur_fan }}"
+          - data:
+              entity_id: "{{ evap_entity }}"
+              hvac_mode: fan_only
+            action: climate.set_hvac_mode
+          - wait_template: "{{ states(evap_entity) == 'fan_only' }}"
+            timeout: "00:00:15"
+            continue_on_timeout: true
           - variables:
               tick_done: true
   - repeat:
@@ -199,6 +172,15 @@ actions:
               {% endif %}
             below_5m: "{{ below_secs >= 300 }}"
             below_10m: "{{ below_secs >= 600 }}"
+            fan_only_secs: |-
+              {% if fan_only_since is none %}
+                0
+              {% else %}
+                {{ (as_timestamp(now()) - as_timestamp(fan_only_since)) | int(0) }}
+              {% endif %}
+            fan_only_5m_elapsed: "{{ fan_only_secs >= 300 }}"
+            temp_fell_1deg_below: "{{ diff < -1.0 }}"
+            can_exit_fan_only: "{{ fan_only_5m_elapsed or temp_fell_1deg_below }}"
         - choose:
             - conditions:
                 - condition: template
@@ -231,13 +213,17 @@ actions:
             hvac: "{{ states(evap_entity) }}"
             cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
         - choose:
-            # R12: If in fan_only and need cooling, switch to cool and restore fan
+            # R12: If in fan_only and need cooling, switch to cool and restore fan (but respect drying cycle)
             - conditions:
                 - condition: template
                   value_template: "{{ not tick_done and hvac == 'fan_only' and need_cooling }}"
+                - condition: template
+                  value_template: "{{ fan_only_since is none or can_exit_fan_only }}"
               sequence:
                 - variables:
-                    keep_fan: "{{ cur_fan }}"
+                    keep_fan: "{{ fan_only_fan_level if fan_only_fan_level is not none else cur_fan }}"
+                    fan_only_since: null
+                    fan_only_fan_level: null
                 - data:
                     entity_id: "{{ evap_entity }}"
                     hvac_mode: cool
@@ -278,6 +264,8 @@ actions:
                   action: climate.set_hvac_mode
                 - variables:
                     tick_done: true
+                    fan_only_since: null
+                    fan_only_fan_level: null
             # R14: If below setpoint for 5m, switch from cool to fan_only
             - conditions:
                 - condition: template
@@ -306,6 +294,15 @@ actions:
                       - delay: "00:00:01"
                 - variables:
                     tick_done: true
+        # Clear fan_only drying state if conditions are met
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ fan_only_since is not none and can_exit_fan_only }}"
+              sequence:
+                - variables:
+                    fan_only_since: null
+                    fan_only_fan_level: null
         # R15: Calculate fan step based on temperature difference
         - variables:
             absdiff: "{{ diff | abs }}"
@@ -323,7 +320,7 @@ actions:
                 - condition: template
                   value_template: >-
                     {{ not tick_done and step != 0 and states(evap_entity) !=
-                    'off' }}
+                    'off' and fan_only_since is none }}
               sequence:
                 - choose:
                     # R16: Adjust fan speed up/down as needed, with safe bounds

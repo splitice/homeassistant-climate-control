@@ -19,8 +19,8 @@ This automation controls an evaporative cooler to maintain a target temperature,
 **R5. If cooling is needed, ensure HVAC is in cool mode and fan is high**  
 *If the temperature is more than 0.5°C above setpoint, switch to cool mode and set fan to maximum.*
 
-**R6. If cooling is not needed but HVAC is still in cool, reduce fan or turn off**  
-*If the system is cooling but no longer needs to, reduce fan speed or switch to fan-only mode.*
+**R6. If cooling is not needed but HVAC is still in cool, switch to fan_only to dry pads**  
+*If the system is cooling but temperature crosses below setpoint, switch to fan-only mode maintaining current fan speed to allow evaporative pads to dry for a minimum of 5 minutes (unless temperature falls more than 1°C below target).*
 
 **R7. Main persistent control loop**  
 *Continuously monitor temperature, setpoint, and control state, responding to changes as needed.*
@@ -37,8 +37,8 @@ This automation controls an evaporative cooler to maintain a target temperature,
 **R11. If off and need cooling, turn on and set fan high**  
 *If the system is off but cooling is needed, turn it on and set the fan to maximum.*
 
-**R12. If in fan_only and need cooling, switch to cool and restore fan**  
-*If in fan-only mode but cooling is needed, switch to cool mode and restore previous fan speed.*
+**R12. If in fan_only and need cooling, switch to cool and restore fan (respecting drying cycle)**  
+*If in fan-only mode but cooling is needed, switch to cool mode and restore previous fan speed. However, if in a drying cycle (less than 5 minutes since entering fan_only and temperature has not fallen 1°C below target), remain in fan_only mode until drying conditions are met.*
 
 **R13. If below setpoint for 10m, turn off**  
 *If the temperature has been below setpoint for 10 minutes, turn the system off.*
@@ -49,8 +49,8 @@ This automation controls an evaporative cooler to maintain a target temperature,
 **R15. Calculate fan step based on temperature difference**  
 *Adjust the fan speed up or down based on how far the temperature is from the setpoint.*
 
-**R16. Adjust fan speed up/down as needed, with safe bounds**  
-*Ensure fan speed changes are within safe limits and avoid setting below minimum.*
+**R16. Adjust fan speed up/down as needed, with safe bounds (not during drying cycle)**  
+*Ensure fan speed changes are within safe limits and avoid setting below minimum. Fan speed adjustments are prevented during the evaporative pad drying cycle.*
 
 **R17. If setpoint changed and now near target, set fan to 1**  
 *If the setpoint is changed and the temperature is now near the target, set the fan to minimum speed.*
@@ -61,8 +61,9 @@ This automation controls an evaporative cooler to maintain a target temperature,
 
 - **Snapshot/restore (R1, R2, R8):** Ensures user settings are preserved and system can safely exit automation.
 - **Persistent loop (R7):** Allows for robust, real-time response to environment and user changes.
-- **Fan speed logic (R5, R6, R11, R12, R15, R16, R17):** Maximizes cooling efficiency and comfort, while minimizing unnecessary fan use.
+- **Fan speed logic (R5, R6, R11, R12, R15, R16, R17):** Maximizes cooling efficiency and comfort, while minimizing unnecessary fan use. Implements pad drying cycle to prevent mold and extend pad life.
 - **Below setpoint timers (R3, R9, R10, R13, R14):** Prevents rapid cycling and allows for graceful ramp-down and shutoff.
+- **Pad drying cycle (R6, R12, R16):** When temperature crosses below setpoint, maintains fan_only mode for 5 minutes minimum to dry evaporative pads, preventing mold growth and extending pad lifespan. Early exit allowed if temperature falls >1°C below target.
 - **Variable initialization (R4):** Ensures all logic operates on up-to-date, consistent state.
 
 See inline comments in `evap-control.automation` for mapping of requirements to code.
