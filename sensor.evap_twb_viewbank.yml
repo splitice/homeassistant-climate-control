@@ -3,6 +3,8 @@
     evap_twb_viewbank:
       friendly_name: "Evaporative Cooler Wet Bulb Temperature"
       unit_of_measurement: "°C"
+      # NOTE: Replace sensor.viewbank_temp and sensor.viewbank_humidity
+      # with your actual outdoor temperature and humidity sensor entity IDs
       value_template: >-
         {% set B = states('sensor.viewbank_temp') | float(none) %}
         {% set RH = states('sensor.viewbank_humidity') | float(none) %}
