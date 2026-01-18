@@ -252,7 +252,7 @@ actions:
                     setpoint_entity: "{{ setpoint_entity }}"
                     outdoor_temp_entity: "{{ outdoor_temp_entity }}"
                     outdoor_rh_entity: "{{ outdoor_rh_entity }}"
-                    forced_fan: "{{ cur_fan }}"
+                    fan_mode: "{{ cur_fan }}"
                 - variables:
                     tick_done: true
 

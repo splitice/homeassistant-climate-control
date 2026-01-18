@@ -33,8 +33,11 @@ sequence:
         {% else %}
           {% set progress = elapsed_secs / total_duration %}
           {% set speed_range = start - 1 %}
-          {% set target = start - (speed_range * progress) %}
-          {{ [1, [start, (target | round(0, 'floor')) | int] | min] | max }}
+          {% set calculated = start - (speed_range * progress) %}
+          {% set floored = (calculated | round(0, 'floor')) | int %}
+          {% set clamped_high = [start, floored] | min %}
+          {% set clamped_low = [1, clamped_high] | max %}
+          {{ clamped_low }}
         {% endif %}
   - choose:
       - conditions:
