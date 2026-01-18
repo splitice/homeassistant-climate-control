@@ -19,6 +19,9 @@ fields:
   setpoint_entity:
     description: Optional. Target temperature for aggressive mode detection
     example: input_number.target_temperature
+  aggressive_temp_threshold:
+    description: Optional. Temperature difference in °C to trigger aggressive mode. Defaults to 2.0°C.
+    example: 2.0
 sequence:
   - variables:
       e: "{{ evap_entity }}"
@@ -26,18 +29,27 @@ sequence:
       raw_start_speed: "{{ fan_only_start_speed | int(1) }}"
       current_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
       max_retries: 20
-      outdoor_temp: "{{ states(outdoor_temp_entity) | float(0) if outdoor_temp_entity is defined else 0 }}"
-      setpoint: "{{ states(setpoint_entity) | float(0) if setpoint_entity is defined else 0 }}"
-      # Aggressive mode: if outdoor temp is >2°C above setpoint, use 2 minute ramp
+      aggressive_threshold: "{{ aggressive_temp_threshold | float(2.0) if aggressive_temp_threshold is defined else 2.0 }}"
+      default_duration_mins: 5
+      aggressive_duration_mins: 2
+      # Get temperature values, using sentinel value to detect invalid states
+      outdoor_temp: "{{ states(outdoor_temp_entity) | float(none) if outdoor_temp_entity is defined else none }}"
+      setpoint: "{{ states(setpoint_entity) | float(none) if setpoint_entity is defined else none }}"
+      # Aggressive mode: outdoor temp > (setpoint + threshold)
       is_aggressive: >-
-        {{ (outdoor_temp_entity is defined and setpoint_entity is defined and 
-           outdoor_temp > 0 and setpoint > 0 and 
-           (outdoor_temp - setpoint) > 2.0) }}
+        {{ (outdoor_temp is not none and setpoint is not none and 
+           (outdoor_temp - setpoint) > aggressive_threshold) }}
       # Cap start speed at 6 if it's higher
       start_speed: "{{ [6, raw_start_speed] | min }}"
-      # Use aggressive duration (2 min) if conditions met, otherwise use provided duration or default (5 min)
+      # Determine duration: aggressive if conditions met, otherwise use provided or default
       duration_minutes: >-
-        {{ 2 if is_aggressive else (ramp_duration_minutes | int(5) if ramp_duration_minutes is defined else 5) }}
+        {% if is_aggressive %}
+          {{ aggressive_duration_mins }}
+        {% elif ramp_duration_minutes is defined %}
+          {{ ramp_duration_minutes | int(default_duration_mins) }}
+        {% else %}
+          {{ default_duration_mins }}
+        {% endif %}
       total_duration_secs: "{{ duration_minutes * 60 }}"
       elapsed_secs: |-
         {% if start_time is none %}
@@ -77,5 +89,5 @@ sequence:
                 - delay: "00:00:01"
 description: >-
   Gradually ramp down fan speed from start_speed to 1 over a configurable duration (default 5 minutes) in fan_only mode.
-  Supports aggressive mode (2 minutes) when outdoor temperature is >2°C above setpoint.
+  Supports aggressive mode (2 minutes) when outdoor temperature exceeds setpoint by configurable threshold (default 2°C).
   Caps start speed at 6 if higher.
