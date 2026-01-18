@@ -17,6 +17,7 @@ sequence:
       start_speed: "{{ fan_only_start_speed | int(1) }}"
       current_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
       max_retries: 20
+      total_duration_secs: 300
       elapsed_secs: |-
         {% if start_time is none %}
           0
@@ -24,13 +25,12 @@ sequence:
           {{ (as_timestamp(now()) - as_timestamp(start_time)) | int(0) }}
         {% endif %}
       target_fan: |-
-        {% set total_duration = 300 %}
         {% if start_speed <= 1 %}
           1
-        {% elif elapsed_secs >= total_duration %}
+        {% elif elapsed_secs >= total_duration_secs %}
           1
         {% else %}
-          {% set progress = elapsed_secs / total_duration %}
+          {% set progress = elapsed_secs / total_duration_secs %}
           {% set speed_range = start_speed - 1 %}
           {% set calculated = start_speed - (speed_range * progress) %}
           {% set floored = calculated | int %}
