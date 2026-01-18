@@ -223,8 +223,7 @@ actions:
             - conditions:
                 - condition: template
                   value_template: >-
-                    {{ not tick_done and below_10m and hvac == 'fan_only' and
-                    cur_fan == 1 }}
+                    {{ not tick_done and below_10m and hvac == 'fan_only' }}
               sequence:
                 - data:
                     entity_id: "{{ evap_entity }}"
@@ -237,8 +236,7 @@ actions:
             - conditions:
                 - condition: template
                   value_template: >-
-                    {{ not tick_done and below_5m and hvac == 'cool' and cur_fan
-                    == 1 }}
+                    {{ not tick_done and below_5m and hvac == 'cool' }}
               sequence:
                 - action: script.evap_apply_mode_and_fan_with_twb
                   data:
@@ -247,6 +245,7 @@ actions:
                     setpoint_entity: "{{ setpoint_entity }}"
                     outdoor_temp_entity: "{{ outdoor_temp_entity }}"
                     outdoor_rh_entity: "{{ outdoor_rh_entity }}"
+                    forced_fan: "1"
                 - variables:
                     tick_done: true
 
