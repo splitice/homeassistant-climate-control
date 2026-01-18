@@ -43,6 +43,16 @@ actions:
       need_cooling: "{{ diff > deadband_cooling }}"
       hvac: "{{ states(evap_entity) }}"
       cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+
+  - choose:
+    # detect if currently fan only, if so set fan_only_since to now()
+    - conditions:
+      - condition: template
+        value_template: "{{ hvac == 'fan_only' }}"
+      sequence:
+      - variables:
+          fan_only_since: "{{ now() }}"
+
   - choose:
       - conditions:
           - condition: template
@@ -130,9 +140,9 @@ actions:
                 - delay: "00:00:00"
         - choose:
             - conditions:
-                # R8: If auto turned off, restore snapshot and exit loop
+                # If below target, track how long
                 - condition: template
-                  value_template: "{{ below_target }}"
+                  value_template: "{{ below_target and not below_since}}"
               sequence:
                 - choose:
                     - conditions:
@@ -239,6 +249,7 @@ actions:
                     outdoor_rh_entity: "{{ outdoor_rh_entity }}"
                 - variables:
                     tick_done: true
+
         # Clear fan_only drying state if conditions are met
         - choose:
             - conditions:
@@ -247,12 +258,23 @@ actions:
               sequence:
                 - variables:
                     fan_only_since: null
+                # conditions have been met to end fan only mode
+                - action: script.evap_apply_mode_and_fan_with_twb
+                  data:
+                    evap_entity: "{{ evap_entity }}"
+                    setpoint_entity: "{{ setpoint_entity }}"
+                    outdoor_temp_entity: "{{ outdoor_temp_entity }}"
+                    outdoor_rh_entity: "{{ outdoor_rh_entity }}"
+                    hvac_mode: off
+                    fan_mode: 0
+
         # R15-R16: Adjust fan speed based on Twb calculation (not during drying cycle)
         - choose:
             - conditions:
                 - condition: template
                   value_template: >-
                     {{ not tick_done and states(evap_entity) != 'off' and
+                    hvac_mode == 'cool' and
                     fan_only_since is none }}
               sequence:
                 - action: script.evap_apply_mode_and_fan_with_twb
