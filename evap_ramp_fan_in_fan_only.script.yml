@@ -25,19 +25,17 @@ sequence:
         {% endif %}
       target_fan: |-
         {% set total_duration = 300 %}
-        {% set start = start_speed | int(1) %}
-        {% if start <= 1 %}
+        {% if start_speed <= 1 %}
           1
         {% elif elapsed_secs >= total_duration %}
           1
         {% else %}
           {% set progress = elapsed_secs / total_duration %}
-          {% set speed_range = start - 1 %}
-          {% set calculated = start - (speed_range * progress) %}
-          {% set floored = (calculated | round(0, 'floor')) | int %}
-          {% set clamped_high = [start, floored] | min %}
-          {% set clamped_low = [1, clamped_high] | max %}
-          {{ clamped_low }}
+          {% set speed_range = start_speed - 1 %}
+          {% set calculated = start_speed - (speed_range * progress) %}
+          {% set floored = calculated | int %}
+          {% set clamped = [1, floored] | max %}
+          {{ clamped }}
         {% endif %}
   - choose:
       - conditions:
