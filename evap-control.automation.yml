@@ -31,6 +31,7 @@ actions:
   - variables:
       below_since: null
       fan_only_since: null
+      fan_only_start_speed: null
   - variables:
       wake_id: startup
       tick_done: false
@@ -52,6 +53,7 @@ actions:
         sequence:
           - variables:
               fan_only_since: "{{ now() }}"
+              fan_only_start_speed: "{{ cur_fan }}"
 
   - choose:
       - conditions:
@@ -75,6 +77,7 @@ actions:
           # R6: Switch to fan_only to dry the pads
           - variables:
               fan_only_since: "{{ now() }}"
+              fan_only_start_speed: "{{ cur_fan }}"
           - data:
               entity_id: "{{ evap_entity }}"
               hvac_mode: fan_only
@@ -206,6 +209,7 @@ actions:
               sequence:
                 - variables:
                     fan_only_since: null
+                    fan_only_start_speed: null
                 - action: script.evap_apply_mode_and_fan_with_twb
                   data:
                     evap_entity: "{{ evap_entity }}"
@@ -232,12 +236,15 @@ actions:
                 - variables:
                     tick_done: true
                     fan_only_since: null
+                    fan_only_start_speed: null
             # R14: If below setpoint for 5m, switch from cool to fan_only with Twb-scaled fan
             - conditions:
                 - condition: template
                   value_template: >-
                     {{ not tick_done and below_5m and hvac == 'cool' }}
               sequence:
+                - variables:
+                    fan_only_start_speed: "{{ cur_fan }}"
                 - action: script.evap_apply_mode_and_fan_with_twb
                   data:
                     evap_entity: "{{ evap_entity }}"
@@ -245,7 +252,7 @@ actions:
                     setpoint_entity: "{{ setpoint_entity }}"
                     outdoor_temp_entity: "{{ outdoor_temp_entity }}"
                     outdoor_rh_entity: "{{ outdoor_rh_entity }}"
-                    forced_fan: "1"
+                    forced_fan: "{{ cur_fan }}"
                 - variables:
                     tick_done: true
 
@@ -257,6 +264,7 @@ actions:
               sequence:
                 - variables:
                     fan_only_since: null
+                    fan_only_start_speed: null
                 # conditions have been met to end fan only mode
                 - action: script.evap_apply_mode_and_fan_with_twb
                   data:
@@ -266,6 +274,23 @@ actions:
                     outdoor_rh_entity: "{{ outdoor_rh_entity }}"
                     hvac_mode: off
                     fan_mode: 0
+
+        # R18: Ramp down fan speed in fan_only mode over 5 minutes
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{ not tick_done and hvac == 'fan_only' and
+                    fan_only_since is not none and
+                    fan_only_start_speed is not none }}
+              sequence:
+                - action: script.evap_ramp_fan_in_fan_only
+                  data:
+                    evap_entity: "{{ evap_entity }}"
+                    fan_only_since: "{{ fan_only_since }}"
+                    fan_only_start_speed: "{{ fan_only_start_speed }}"
+                - variables:
+                    tick_done: true
 
         # R15-R16: Adjust fan speed based on Twb calculation (not during drying cycle)
         - choose:

@@ -1,0 +1,52 @@
+alias: evap_ramp_fan_in_fan_only
+mode: restart
+fields:
+  evap_entity:
+    description: Climate entity
+    example: climate.evap
+  fan_only_since:
+    description: Timestamp when fan_only mode started
+    example: "2024-01-01 12:00:00"
+  fan_only_start_speed:
+    description: Initial fan speed when entering fan_only mode
+    example: 5
+sequence:
+  - variables:
+      e: "{{ evap_entity }}"
+      start_time: "{{ fan_only_since }}"
+      start_speed: "{{ fan_only_start_speed | int(1) }}"
+      current_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+      elapsed_secs: |-
+        {% if start_time is none %}
+          0
+        {% else %}
+          {{ (as_timestamp(now()) - as_timestamp(start_time)) | int(0) }}
+        {% endif %}
+      target_fan: |-
+        {% set total_duration = 300 %}
+        {% if elapsed_secs >= total_duration %}
+          1
+        {% else %}
+          {% set progress = elapsed_secs / total_duration %}
+          {% set speed_range = start_speed - 1 %}
+          {% set target = start_speed - (speed_range * progress) %}
+          {{ [1, [start_speed, (target | round(0, 'floor')) | int] | min] | max }}
+        {% endif %}
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ target_fan != current_fan }}"
+        sequence:
+          - repeat:
+              until:
+                - condition: template
+                  value_template: >-
+                    {{ state_attr(e,'fan_mode') == (target_fan | string) or
+                    repeat.index >= 20 }}
+              sequence:
+                - action: climate.set_fan_mode
+                  data:
+                    entity_id: "{{ e }}"
+                    fan_mode: "{{ target_fan }}"
+                - delay: "00:00:01"
+description: Gradually ramp down fan speed from start_speed to 1 over 5 minutes in fan_only mode

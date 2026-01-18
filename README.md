@@ -43,14 +43,17 @@ This automation controls an evaporative cooler to maintain a target temperature,
 **R13. If below setpoint for 10m, turn off**  
 *If the temperature has been below setpoint for 10 minutes, turn the system off.*
 
-**R14. If below setpoint for 5m, switch from cool to fan_only with Twb-scaled fan**  
-*If the temperature has been below setpoint for 5 minutes, switch from cool to fan-only mode with fan speed calculated based on outdoor wet bulb temperature.*
+**R14. If below setpoint for 5m, switch from cool to fan_only with current fan speed**  
+*If the temperature has been below setpoint for 5 minutes, switch from cool to fan-only mode maintaining the current fan speed, which will then be gradually ramped down over 5 minutes (see R18).*
 
 **R15-R16. Adjust fan speed based on wet bulb temperature (not during drying cycle)**  
 *Continuously optimize fan speed based on outdoor wet bulb temperature, target indoor temperature, and thermodynamic efficiency curves. Adjustments are prevented during the evaporative pad drying cycle. The wet bulb calculation considers outdoor temperature and humidity to determine the optimal saturation efficiency and corresponding fan speed.*
 
 **R17. If setpoint changed and now near target, adjust fan with wet bulb calculation**  
 *If the setpoint is changed and the temperature is now near the target, adjust the fan speed based on wet bulb temperature calculation.*
+
+**R18. Ramp down fan speed in fan_only mode**  
+*When in fan_only mode, gradually reduce the fan speed from the initial speed (when entering fan_only) to speed 1 over a 5-minute period. This provides a smooth transition that continues the pad drying process while reducing energy consumption and noise.*
 
 ---
 
@@ -59,7 +62,7 @@ This automation controls an evaporative cooler to maintain a target temperature,
 - **Snapshot/restore (R1, R2, R8):** Ensures user settings are preserved and system can safely exit automation.
 - **Persistent loop (R7):** Allows for robust, real-time response to environment and user changes.
 - **Wet bulb temperature-based fan control (R5, R11, R12, R15-R17):** Uses outdoor wet bulb temperature (Twb) calculation to optimize fan speed based on thermodynamic efficiency. The system calculates Twb using the Stull approximation from outdoor dry-bulb temperature and relative humidity, then determines the required saturation efficiency to reach the target temperature. Fan speed is selected to match this efficiency, maximizing cooling effectiveness while minimizing energy use.
-- **Pad drying cycle (R6, R12, R15-R16):** When temperature crosses below setpoint, maintains fan_only mode for 5 minutes minimum to dry evaporative pads, preventing mold growth and extending pad lifespan. Early exit allowed if temperature falls >1°C below target.
+- **Pad drying cycle (R6, R12, R15-R16, R18):** When temperature crosses below setpoint, maintains fan_only mode for 5 minutes minimum to dry evaporative pads, preventing mold growth and extending pad lifespan. Early exit allowed if temperature falls >1°C below target. During the fan_only period, fan speed is gradually ramped down from the initial speed to speed 1 over 5 minutes, providing energy savings and reduced noise while maintaining effective pad drying.
 - **Below setpoint timers (R3, R9, R10, R13, R14):** Prevents rapid cycling and allows for graceful ramp-down and shutoff.
 - **Variable initialization (R4):** Ensures all logic operates on up-to-date, consistent state.
 
