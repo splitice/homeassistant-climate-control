@@ -71,8 +71,10 @@ The automation requires the following Home Assistant entities to be configured:
 - `sensor.home_temperature` - Indoor temperature sensor
 - `input_number.target_temperature` - Target temperature setpoint
 - `input_boolean.automatic_control` - Toggle for automatic control
-- `sensor.viewbank_temp` - Outdoor dry-bulb temperature sensor
-- `sensor.viewbank_humidity` - Outdoor relative humidity sensor
+- `sensor.viewbank_temp` - Outdoor dry-bulb temperature sensor (example name - replace with your sensor)
+- `sensor.viewbank_humidity` - Outdoor relative humidity sensor (example name - replace with your sensor)
+
+**Note**: The outdoor sensor entity names (`sensor.viewbank_temp` and `sensor.viewbank_humidity`) are location-specific examples. Update the `outdoor_temp_entity` and `outdoor_rh_entity` variables in the automation to match your actual outdoor sensor entity IDs.
 
 ## Wet Bulb Temperature Fan Control
 
