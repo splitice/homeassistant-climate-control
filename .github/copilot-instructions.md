@@ -14,5 +14,5 @@ This project implements a climate control algorithm for Home Assistant that auto
 - Jinja2 templating for state logic
 - Entity types: climate (evap), sensor (temperature), input_boolean (control), input_number (setpoint)
 
-## Requirements
-17 numbered requirements (R1-R17) documented in README.md map to specific code sections in evap-control.automation.
+## Documentation
+ - Keep README.md updated with automation purpose and requirements
