@@ -35,6 +35,11 @@ fields:
       Optional. If (B - Twb) < this, treat evap as ineffective and return high
       fan.
     example: 1
+  max_increase_step:
+    description: >-
+      Optional. Maximum fan speed increase from current speed. Prevents noise
+      from sudden large increases.
+    example: 4
 sequence:
   - variables:
       e: "{{ evap_entity }}"
@@ -44,6 +49,8 @@ sequence:
       eta1: "{{ eta_1 | default(0.85) | float }}"
       eta10: "{{ eta_10 | default(0.65) | float }}"
       min_d: "{{ min_delta_db_wb | default(1.0) | float }}"
+      max_inc_step: "{{ max_increase_step | default(4) | int }}"
+      current_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
       A: "{{ states(setpoint_entity) | float(default=nan) }}"
       B: "{{ states(outdoor_temp_entity) | float(default=nan) }}"
       RH: "{{ states(outdoor_rh_entity) | float(default=nan) }}"
@@ -82,15 +89,20 @@ sequence:
         {% set Tin = states('sensor.home_temperature') | float(default=nan) %}
         {% set err = (Tin - A) if (Tin is number and A is number) else 0 %}
 
-        {# Comfort boost when we’re above target #}
+        {# Necessity-based boost: smaller differences need less aggressive increases #}
+        {# For 0.5°C difference, a modest boost is sufficient; avoid maxing out #}
         {% set boost =
-             10 if err >= 3 else
-             4 if err >= 1.5 else
-             2 if err >= 0.8 else
-             1 if err >= 0.3 else
+             4 if err >= 3 else
+             2 if err >= 1.5 else
+             1 if err >= 0.8 else
              0 %}
 
-        {{ [1, [10, base + boost] | min] | max }}
+        {# Calculate desired speed with boost #}
+        {% set desired_with_boost = [1, [10, base + boost] | min] | max %}
+
+        {# Apply max_increase_step limit to prevent large jumps from current speed #}
+        {% set max_allowed = current_fan + max_inc_step %}
+        {{ [1, [10, [desired_with_boost, max_allowed] | min] | min] | max }}
   - choose:
       - conditions:
           - condition: template
