@@ -63,6 +63,8 @@ actions:
             value_template: "{{ need_cooling }}"
         sequence:
           # R5: If cooling is needed, ensure HVAC is in cool mode with Twb-scaled fan
+          - variables:
+              maintain_mode: false
           - action: script.evap_apply_mode_and_fan_with_twb
             data:
               evap_entity: "{{ evap_entity }}"
@@ -190,6 +192,8 @@ actions:
                     need_cooling }}
               sequence:
                 # R11: If off and need cooling, turn on with Twb-scaled fan
+                - variables:
+                    maintain_mode: false
                 - action: script.evap_apply_mode_and_fan_with_twb
                   data:
                     evap_entity: "{{ evap_entity }}"
@@ -232,6 +236,7 @@ actions:
                 - variables:
                     fan_only_since: null
                     fan_only_start_speed: null
+                    maintain_mode: false
                 - action: script.evap_apply_mode_and_fan_with_twb
                   data:
                     evap_entity: "{{ evap_entity }}"

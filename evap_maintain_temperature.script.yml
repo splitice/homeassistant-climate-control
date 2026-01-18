@@ -83,7 +83,7 @@ sequence:
         {# Only increase fan if temperature rises significantly above setpoint #}
         {% elif err > fan_threshold %}
           {# Temperature is too high, increase fan speed by 1 step max #}
-          {{ [10, current_fan + 1, base] | max }}
+          {{ [1, [10, current_fan + 1, base] | min] | max }}
         {# Only decrease fan if temperature is well below setpoint #}
         {% elif err < -fan_threshold %}
           {# Temperature is comfortably below setpoint, can decrease by 1 step #}
