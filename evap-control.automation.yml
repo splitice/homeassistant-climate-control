@@ -290,6 +290,8 @@ actions:
                     evap_entity: "{{ evap_entity }}"
                     fan_only_since: "{{ fan_only_since }}"
                     fan_only_start_speed: "{{ fan_only_start_speed }}"
+                    outdoor_temp_entity: "{{ outdoor_temp_entity }}"
+                    setpoint_entity: "{{ setpoint_entity }}"
                 - variables:
                     tick_done: true
 

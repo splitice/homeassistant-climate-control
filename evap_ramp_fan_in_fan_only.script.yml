@@ -10,14 +10,35 @@ fields:
   fan_only_start_speed:
     description: Initial fan speed when entering fan_only mode
     example: 5
+  ramp_duration_minutes:
+    description: Optional. Duration in minutes to complete the ramp down. Defaults to 5 minutes.
+    example: 5
+  outdoor_temp_entity:
+    description: Optional. Outdoor temperature sensor for aggressive mode detection
+    example: sensor.viewbank_temp
+  setpoint_entity:
+    description: Optional. Target temperature for aggressive mode detection
+    example: input_number.target_temperature
 sequence:
   - variables:
       e: "{{ evap_entity }}"
       start_time: "{{ fan_only_since }}"
-      start_speed: "{{ fan_only_start_speed | int(1) }}"
+      raw_start_speed: "{{ fan_only_start_speed | int(1) }}"
       current_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
       max_retries: 20
-      total_duration_secs: 300
+      outdoor_temp: "{{ states(outdoor_temp_entity) | float(0) if outdoor_temp_entity is defined else 0 }}"
+      setpoint: "{{ states(setpoint_entity) | float(0) if setpoint_entity is defined else 0 }}"
+      # Aggressive mode: if outdoor temp is >2°C above setpoint, use 2 minute ramp
+      is_aggressive: >-
+        {{ (outdoor_temp_entity is defined and setpoint_entity is defined and 
+           outdoor_temp > 0 and setpoint > 0 and 
+           (outdoor_temp - setpoint) > 2.0) }}
+      # Cap start speed at 6 if it's higher
+      start_speed: "{{ [6, raw_start_speed] | min }}"
+      # Use aggressive duration (2 min) if conditions met, otherwise use provided duration or default (5 min)
+      duration_minutes: >-
+        {{ 2 if is_aggressive else (ramp_duration_minutes | int(5) if ramp_duration_minutes is defined else 5) }}
+      total_duration_secs: "{{ duration_minutes * 60 }}"
       elapsed_secs: |-
         {% if start_time is none %}
           0
@@ -54,4 +75,7 @@ sequence:
                     entity_id: "{{ e }}"
                     fan_mode: "{{ target_fan }}"
                 - delay: "00:00:01"
-description: Gradually ramp down fan speed from start_speed to 1 over 5 minutes in fan_only mode
+description: >-
+  Gradually ramp down fan speed from start_speed to 1 over a configurable duration (default 5 minutes) in fan_only mode.
+  Supports aggressive mode (2 minutes) when outdoor temperature is >2°C above setpoint.
+  Caps start speed at 6 if higher.
