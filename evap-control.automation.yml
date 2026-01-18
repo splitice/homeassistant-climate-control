@@ -353,7 +353,7 @@ actions:
                     {{ not tick_done and states(evap_entity) != 'off' and
                     hvac == 'cool' and
                     fan_only_since is none and
-                    maintain_mode }}
+                    maintain_mode == true }}
               sequence:
                 # Use maintain temperature script for stable fan control
                 - action: script.evap_maintain_temperature
@@ -370,7 +370,7 @@ actions:
                     {{ not tick_done and states(evap_entity) != 'off' and
                     hvac == 'cool' and
                     fan_only_since is none and
-                    not maintain_mode }}
+                    maintain_mode != true }}
               sequence:
                 # Use standard script for aggressive cooling
                 - action: script.evap_apply_mode_and_fan_with_twb
