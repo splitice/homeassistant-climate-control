@@ -43,8 +43,8 @@ This automation controls an evaporative cooler to maintain a target temperature,
 **R13. If below setpoint for 10m, turn off**  
 *If the temperature has been below setpoint for 10 minutes, turn the system off.*
 
-**R14. If below setpoint for 5m, switch from cool to fan_only**  
-*If the temperature has been below setpoint for 5 minutes, switch from cool to fan-only mode.*
+**R14. If below setpoint for 5m, switch from cool to fan_only with Twb-scaled fan**  
+*If the temperature has been below setpoint for 5 minutes, switch from cool to fan-only mode with fan speed calculated based on outdoor wet bulb temperature.*
 
 **R15-R16. Adjust fan speed based on wet bulb temperature (not during drying cycle)**  
 *Continuously optimize fan speed based on outdoor wet bulb temperature, target indoor temperature, and thermodynamic efficiency curves. Adjustments are prevented during the evaporative pad drying cycle. The wet bulb calculation considers outdoor temperature and humidity to determine the optimal saturation efficiency and corresponding fan speed.*

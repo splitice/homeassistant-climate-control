@@ -216,17 +216,14 @@ actions:
                     {{ not tick_done and below_10m and hvac == 'fan_only' and
                     cur_fan == 1 }}
               sequence:
-                - action: script.evap_apply_mode_and_fan_with_twb
-                  data:
-                    evap_entity: "{{ evap_entity }}"
+                - data:
+                    entity_id: "{{ evap_entity }}"
                     hvac_mode: "off"
-                    setpoint_entity: "{{ setpoint_entity }}"
-                    outdoor_temp_entity: "{{ outdoor_temp_entity }}"
-                    outdoor_rh_entity: "{{ outdoor_rh_entity }}"
+                  action: climate.set_hvac_mode
                 - variables:
                     tick_done: true
                     fan_only_since: null
-            # R14: If below setpoint for 5m, switch from cool to fan_only
+            # R14: If below setpoint for 5m, switch from cool to fan_only with Twb-scaled fan
             - conditions:
                 - condition: template
                   value_template: >-
@@ -237,7 +234,6 @@ actions:
                   data:
                     evap_entity: "{{ evap_entity }}"
                     hvac_mode: fan_only
-                    fan_mode: "1"
                     setpoint_entity: "{{ setpoint_entity }}"
                     outdoor_temp_entity: "{{ outdoor_temp_entity }}"
                     outdoor_rh_entity: "{{ outdoor_rh_entity }}"
