@@ -1,4 +1,4 @@
-alias: "Exp: Evap Automation (v2+)"
+alias: "Exp: Evap Automation (v3)"
 description: Persistent evap controller loop w/ snapshot restore and robust fan retries
 triggers:
   - entity_id: input_boolean.automatic_control
@@ -29,6 +29,89 @@ actions:
     action: scene.create
   - variables:
       below_since: null
+  - variables:
+      wake_id: startup
+      tick_done: false
+      T: "{{ states(temp_entity) | float(0) }}"
+      S: "{{ states(setpoint_entity) | float(0) }}"
+      diff: >-
+        {{ (states(temp_entity) | float(0)) - (states(setpoint_entity) |
+        float(0)) }}
+      need_cooling: "{{ diff > 0.5}}"
+      hvac: "{{ states(evap_entity) }}"
+      cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ need_cooling }}"
+        sequence:
+          - data:
+              entity_id: "{{ evap_entity }}"
+              hvac_mode: cool
+            action: climate.set_hvac_mode
+          - wait_template: "{{ states(evap_entity) == 'cool' }}"
+            timeout: "00:00:15"
+            continue_on_timeout: true
+          - repeat:
+              until:
+                - condition: template
+                  value_template: "{{ state_attr(evap_entity,'fan_mode') == '5' }}"
+                - condition: template
+                  value_template: "{{ repeat.index >= 6 }}"
+              sequence:
+                - data:
+                    entity_id: "{{ evap_entity }}"
+                    fan_mode: "5"
+                  action: climate.set_fan_mode
+                - delay: "00:00:01"
+          - variables:
+              tick_done: true
+      - conditions:
+          - condition: template
+            value_template: "{{ hvac == 'cool' and not need_cooling }}"
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ cur_fan == 1 }}"
+                sequence:
+                  - data:
+                      entity_id: "{{ evap_entity }}"
+                      hvac_mode: fan_only
+                    action: climate.set_hvac_mode
+                  - wait_template: "{{ states(evap_entity) == 'fan_only' }}"
+                    timeout: "00:00:15"
+                    continue_on_timeout: true
+                  - repeat:
+                      until:
+                        - condition: template
+                          value_template: "{{ state_attr(evap_entity,'fan_mode') == '1' }}"
+                        - condition: template
+                          value_template: "{{ repeat.index >= 6 }}"
+                      sequence:
+                        - data:
+                            entity_id: "{{ evap_entity }}"
+                            fan_mode: "1"
+                          action: climate.set_fan_mode
+                        - delay: "00:00:01"
+              - conditions:
+                  - condition: template
+                    value_template: "{{ cur_fan != 1 }}"
+                sequence:
+                  - repeat:
+                      until:
+                        - condition: template
+                          value_template: "{{ state_attr(evap_entity,'fan_mode') == '1' }}"
+                        - condition: template
+                          value_template: "{{ repeat.index >= 6 }}"
+                      sequence:
+                        - data:
+                            entity_id: "{{ evap_entity }}"
+                            fan_mode: "1"
+                          action: climate.set_fan_mode
+                        - delay: "00:00:01"
+          - variables:
+              tick_done: true
   - repeat:
       while:
         - condition: template
@@ -55,7 +138,7 @@ actions:
             diff: >-
               {{ (states(temp_entity) | float(0)) - (states(setpoint_entity) |
               float(0)) }}
-            need_cooling: "{{ diff > 1.0 }}"
+            need_cooling: "{{ diff > 0.5 }}"
             near_target_after_setpoint_change: >-
               {{ (states(setpoint_entity) | float(0)) >= ((states(temp_entity) |
               float(0)) - 0.5) }}
@@ -227,7 +310,9 @@ actions:
         - choose:
             - conditions:
                 - condition: template
-                  value_template: "{{ not tick_done and step != 0 }}"
+                  value_template: >-
+                    {{ not tick_done and step != 0 and states(evap_entity) !=
+                    'off' }}
               sequence:
                 - choose:
                     - conditions:
@@ -276,18 +361,6 @@ actions:
                         - condition: template
                           value_template: "{{ not tick_done }}"
                       sequence:
-                        - choose:
-                            - conditions:
-                                - condition: template
-                                  value_template: "{{ states(evap_entity) == 'off' }}"
-                              sequence:
-                                - data:
-                                    entity_id: "{{ evap_entity }}"
-                                    hvac_mode: cool
-                                  action: climate.set_hvac_mode
-                                - wait_template: "{{ states(evap_entity) == 'cool' }}"
-                                  timeout: "00:00:15"
-                                  continue_on_timeout: true
                         - repeat:
                             until:
                               - condition: template
