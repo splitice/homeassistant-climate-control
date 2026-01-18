@@ -89,6 +89,14 @@ actions:
           - wait_template: "{{ states(evap_entity) == 'fan_only' }}"
             timeout: "00:00:15"
             continue_on_timeout: true
+          # Apply ramping during startup
+          - action: script.evap_ramp_fan_in_fan_only
+            data:
+              evap_entity: "{{ evap_entity }}"
+              fan_only_since: "{{ fan_only_since }}"
+              fan_only_start_speed: "{{ fan_only_start_speed }}"
+              outdoor_temp_entity: "{{ outdoor_temp_entity }}"
+              setpoint_entity: "{{ setpoint_entity }}"
           - variables:
               tick_done: true
   - repeat:
