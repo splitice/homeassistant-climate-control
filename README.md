@@ -16,11 +16,11 @@ This automation controls an evaporative cooler to maintain a target temperature,
 **R4. Initialize main loop variables**  
 *Set up variables for temperature, setpoint, difference, need for cooling, HVAC state, and fan speed.*
 
-**R5. If cooling is needed, ensure HVAC is in cool mode and fan is high**  
-*If the temperature is more than 0.5°C above setpoint, switch to cool mode and set fan to maximum.*
+**R5. If cooling is needed, ensure HVAC is in cool mode with wet bulb optimized fan speed**  
+*If the temperature is more than 0.3°C above setpoint, switch to cool mode and set fan speed optimized based on outdoor wet bulb temperature calculation.*
 
 **R6. If cooling is not needed but HVAC is still in cool, switch to fan_only to dry pads**  
-*If the system is cooling but temperature crosses below setpoint, switch to fan-only mode maintaining current fan speed to allow evaporative pads to dry for a minimum of 5 minutes (unless temperature falls more than 1°C below target).*
+*If the system is cooling but temperature crosses below setpoint, switch to fan-only mode to allow evaporative pads to dry for a minimum of 5 minutes (unless temperature falls more than 1°C below target).*
 
 **R7. Main persistent control loop**  
 *Continuously monitor temperature, setpoint, and control state, responding to changes as needed.*
@@ -34,11 +34,11 @@ This automation controls an evaporative cooler to maintain a target temperature,
 **R10. Calculate how long we've been below setpoint (5m/10m thresholds)**  
 *Determine if the temperature has been below setpoint for 5 or 10 minutes to trigger further actions.*
 
-**R11. If off and need cooling, turn on and set fan high**  
-*If the system is off but cooling is needed, turn it on and set the fan to maximum.*
+**R11. If off and need cooling, turn on with wet bulb optimized fan speed**  
+*If the system is off but cooling is needed, turn it on and set the fan speed optimized based on outdoor wet bulb temperature calculation.*
 
-**R12. If in fan_only and need cooling, switch to cool and restore fan (respecting drying cycle)**  
-*If in fan-only mode but cooling is needed, switch to cool mode and restore previous fan speed. However, if in a drying cycle (less than 5 minutes since entering fan_only and temperature has not fallen 1°C below target), remain in fan_only mode until drying conditions are met.*
+**R12. If in fan_only and need cooling, switch to cool with wet bulb optimized fan (respecting drying cycle)**  
+*If in fan-only mode but cooling is needed, switch to cool mode with fan speed calculated based on outdoor wet bulb temperature. However, if in a drying cycle (less than 5 minutes since entering fan_only and temperature has not fallen 1°C below target), remain in fan_only mode until drying conditions are met.*
 
 **R13. If below setpoint for 10m, turn off**  
 *If the temperature has been below setpoint for 10 minutes, turn the system off.*
@@ -46,14 +46,11 @@ This automation controls an evaporative cooler to maintain a target temperature,
 **R14. If below setpoint for 5m, switch from cool to fan_only**  
 *If the temperature has been below setpoint for 5 minutes, switch from cool to fan-only mode.*
 
-**R15. Calculate fan step based on temperature difference**  
-*Adjust the fan speed up or down based on how far the temperature is from the setpoint.*
+**R15-R16. Adjust fan speed based on wet bulb temperature (not during drying cycle)**  
+*Continuously optimize fan speed based on outdoor wet bulb temperature, target indoor temperature, and thermodynamic efficiency curves. Adjustments are prevented during the evaporative pad drying cycle. The wet bulb calculation considers outdoor temperature and humidity to determine the optimal saturation efficiency and corresponding fan speed.*
 
-**R16. Adjust fan speed up/down as needed, with safe bounds (not during drying cycle)**  
-*Ensure fan speed changes are within safe limits and avoid setting below minimum. Fan speed adjustments are prevented during the evaporative pad drying cycle.*
-
-**R17. If setpoint changed and now near target, set fan to 1**  
-*If the setpoint is changed and the temperature is now near the target, set the fan to minimum speed.*
+**R17. If setpoint changed and now near target, adjust fan with wet bulb calculation**  
+*If the setpoint is changed and the temperature is now near the target, adjust the fan speed based on wet bulb temperature calculation.*
 
 ---
 
@@ -61,9 +58,34 @@ This automation controls an evaporative cooler to maintain a target temperature,
 
 - **Snapshot/restore (R1, R2, R8):** Ensures user settings are preserved and system can safely exit automation.
 - **Persistent loop (R7):** Allows for robust, real-time response to environment and user changes.
-- **Fan speed logic (R5, R6, R11, R12, R15, R16, R17):** Maximizes cooling efficiency and comfort, while minimizing unnecessary fan use. Implements pad drying cycle to prevent mold and extend pad life.
+- **Wet bulb temperature-based fan control (R5, R11, R12, R15-R17):** Uses outdoor wet bulb temperature (Twb) calculation to optimize fan speed based on thermodynamic efficiency. The system calculates Twb using the Stull approximation from outdoor dry-bulb temperature and relative humidity, then determines the required saturation efficiency to reach the target temperature. Fan speed is selected to match this efficiency, maximizing cooling effectiveness while minimizing energy use.
+- **Pad drying cycle (R6, R12, R15-R16):** When temperature crosses below setpoint, maintains fan_only mode for 5 minutes minimum to dry evaporative pads, preventing mold growth and extending pad lifespan. Early exit allowed if temperature falls >1°C below target.
 - **Below setpoint timers (R3, R9, R10, R13, R14):** Prevents rapid cycling and allows for graceful ramp-down and shutoff.
-- **Pad drying cycle (R6, R12, R16):** When temperature crosses below setpoint, maintains fan_only mode for 5 minutes minimum to dry evaporative pads, preventing mold growth and extending pad lifespan. Early exit allowed if temperature falls >1°C below target.
 - **Variable initialization (R4):** Ensures all logic operates on up-to-date, consistent state.
+
+## Required Entities
+
+The automation requires the following Home Assistant entities to be configured:
+
+- `climate.evap` - The evaporative cooler climate entity
+- `sensor.home_temperature` - Indoor temperature sensor
+- `input_number.target_temperature` - Target temperature setpoint
+- `input_boolean.automatic_control` - Toggle for automatic control
+- `sensor.viewbank_temp` - Outdoor dry-bulb temperature sensor
+- `sensor.viewbank_humidity` - Outdoor relative humidity sensor
+
+## Wet Bulb Temperature Fan Control
+
+The automation uses the `evap_apply_mode_and_fan_with_twb` script to calculate optimal fan speeds based on outdoor conditions. This script:
+
+1. Calculates wet bulb temperature (Twb) using the Stull approximation from outdoor temperature and humidity
+2. Determines the required saturation efficiency: η_req = (B - A_aim) / (B - Twb)
+   - B = outdoor dry-bulb temperature
+   - A_aim = target temperature + aim_offset (default 0.3°C)
+   - Twb = wet bulb temperature
+3. Maps efficiency to fan speed using a linear interpolation between η₁ (0.85 at fan speed 1) and η₁₀ (0.65 at fan speed 10)
+4. Returns a fan speed between 1-10, or 10 if outdoor conditions are too humid (B - Twb < 1.0°C)
+
+This approach ensures the evaporative cooler operates at the most efficient fan speed for current outdoor conditions, reducing energy consumption while maintaining comfort.
 
 See inline comments in `evap-control.automation` for mapping of requirements to code.
