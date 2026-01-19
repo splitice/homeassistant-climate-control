@@ -106,24 +106,55 @@ sequence:
         {% set base_limited = [1, [10, [base, max_allowed_base] | min] | min] |
         max %}
 
+        
 
-        {# Necessity-based boost: smaller differences need less aggressive
-        increases #}
+        {% set A = A if (A is number) else nan %}
+        {% set aim = (A + aim_offset_v) if (A is number) else nan %}
 
-        {# For 0.5°C difference, a modest boost is sufficient; avoid maxing out
-        #}
+        {# Search a window around base; widen if you want more authority #}
+        {% set lo = [1, base_limited - 3] | max %}
+        {% set hi = [10, base_limited + 3] | min %}
 
-        {% set boost =
-             10 if err >= 5 else
-             6 if err >= 4 else
-             4 if err >= 3 else
-             2 if err >= 2 else
-             1 if err >= 1 else
-             0 %}
+        {% set best_fan = base_limited %}
+        {% set best_err = 999 %}
 
-        {# Apply boost on top of the limited base #}
+        {% for s in range(lo, hi + 1) %}
+          {# --- Predict apparent temp at candidate fan s --- #}
+          {% set T = states('sensor.home_temperature') | float(default=nan) %}
+          {% set RHin = states('sensor.home_humidity') | float(default=nan) %}
+          {% set hvac = states(e) %}
 
-        {{ [1, [10, base_limited + boost] | min] | max }}
+          {% if T is number and RHin is number and aim is number %}
+            {% set fan_frac = (s - 1) / 9 %}
+            {% set cool_temp_drop_max = 3.0 %}
+            {% set cool_rh_boost_max = 12.0 %}
+
+            {% set T_eff = T %}
+            {% set RH_eff = RHin %}
+            {% if hvac == 'cool' %}
+              {% set T_eff = T - (cool_temp_drop_max * fan_frac) %}
+              {% set RH_eff = [0, [RHin + (cool_rh_boost_max * fan_frac), 100] | min] | max %}
+            {% endif %}
+
+            {% set v_min = 0.10 %}
+            {% set v_max = 1.50 %}
+            {% set v = v_min + (s - 1) * (v_max - v_min) / 9 %}
+
+            {% set es = 6.105 * (2.718281828 ** (17.27 * T_eff / (237.7 + T_eff))) %}
+            {% set e_v = (RH_eff / 100.0) * es %}
+            {% set AT = T_eff + 0.33 * e_v - 0.70 * v - 4.0 %}
+
+            {# Error relative to target "aim" apparent temp #}
+            {% set err = (AT - aim) | abs %}
+
+            {% if err < best_err %}
+              {% set best_err = err %}
+              {% set best_fan = s %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+
+        {{ best_fan }}
   - choose:
       - conditions:
           - condition: template
