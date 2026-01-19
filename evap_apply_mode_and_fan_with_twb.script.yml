@@ -18,7 +18,7 @@ fields:
     example: sensor.viewbank_humidity
   twb_sensor:
     description: Optional. Wet bulb temperature sensor (°C). If not provided, Twb is calculated inline.
-    example: sensor.evap_twb_viewbank
+    example: sensor.viewbank_wet_bulb_temperature
   fan_mode:
     description: >-
       Optional. If provided, forces this fan speed (string/number 1-10). If

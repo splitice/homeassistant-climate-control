@@ -7,7 +7,7 @@ Implemented a dual-mode temperature control system that switches between aggress
 
 ### 1. New Files Created
 
-#### `sensor.evap_twb_viewbank.yml`
+#### `sensor.viewbank_wet_bulb_temperature.yml`
 - Template sensor for calculating wet bulb temperature
 - Uses Stull approximation formula
 - Takes outdoor temperature and humidity as inputs
@@ -122,7 +122,7 @@ OFF → COOL (aggressive) → COOL (maintain) ⟷ COOL (aggressive)
 
 ### YAML Syntax
 All files validated with Python yaml.safe_load():
-- ✓ sensor.evap_twb_viewbank.yml
+- ✓ sensor.viewbank_wet_bulb_temperature.yml
 - ✓ evap_maintain_temperature.script.yml
 - ✓ evap-control.automation.yml
 - ✓ evap_apply_mode_and_fan_with_twb.script.yml
@@ -147,7 +147,7 @@ Verified correct behavior for:
 ## Migration Notes
 
 ### For Existing Users
-1. Add `sensor.evap_twb_viewbank.yml` to sensor configuration
+1. Add `sensor.viewbank_wet_bulb_temperature.yml` to sensor configuration
 2. Add `evap_maintain_temperature.script.yml` to scripts
 3. Update `evap-control.automation.yml`
 4. Update `evap_apply_mode_and_fan_with_twb.script.yml`

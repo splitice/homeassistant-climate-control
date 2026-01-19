@@ -226,7 +226,7 @@ Fan:   8 ──┬─── 6 ──┬─── 4 ──┬─── 3 ──�
 │    • sensor.home_feels_like     (Indoor "feels like" temp) │
 │    • sensor.viewbank_temp       (Outdoor temp)     │
 │    • sensor.viewbank_humidity   (Outdoor RH)       │
-│    • sensor.evap_twb_viewbank   (Calculated Twb)   │
+│    • sensor.viewbank_wet_bulb_temperature   (Calculated Twb)   │
 │    • input_number.target_temp   (User setpoint)    │
 │    • input_boolean.auto_control (Enable/Disable)   │
 │                                                    │

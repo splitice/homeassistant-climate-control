@@ -290,7 +290,7 @@ actions:
                             evap_entity: "{{ evap_entity }}"
                             setpoint_entity: "{{ setpoint_entity }}"
                             outdoor_temp_entity: "{{ outdoor_temp_entity }}"
-                            twb_sensor: sensor.evap_twb_viewbank
+                            twb_sensor: sensor.viewbank_wet_bulb_temperature
                             hvac_mode: cool
                             fan_mode: "1"
                         - variables:
@@ -369,7 +369,7 @@ actions:
                     evap_entity: "{{ evap_entity }}"
                     setpoint_entity: "{{ setpoint_entity }}"
                     outdoor_temp_entity: "{{ outdoor_temp_entity }}"
-                    twb_sensor: sensor.evap_twb_viewbank
+                    twb_sensor: sensor.viewbank_wet_bulb_temperature
                 - variables:
                     tick_done: true
             - conditions:
@@ -415,4 +415,4 @@ variables:
   auto_entity: input_boolean.automatic_control
   outdoor_temp_entity: sensor.viewbank_temp
   outdoor_rh_entity: sensor.viewbank_humidity
-  twb_sensor_entity: sensor.evap_twb_viewbank
+  twb_sensor_entity: sensor.viewbank_wet_bulb_temperature

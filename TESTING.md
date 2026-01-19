@@ -15,7 +15,7 @@ Ensure the following entities are configured in your Home Assistant:
 - `sensor.viewbank_humidity` - Outdoor humidity sensor (adjust name in automation)
 
 ### Install Configuration Files
-1. Add `sensor.evap_twb_viewbank.yml` to your Home Assistant sensor configuration
+1. Add `sensor.viewbank_wet_bulb_temperature.yml` to your Home Assistant sensor configuration
 2. Add `evap_maintain_temperature.script.yml` to your scripts directory
 3. Update `evap_apply_mode_and_fan_with_twb.script.yml` (already supports the sensor)
 4. Add/update `evap-control.automation.yml` to your automations directory
@@ -117,7 +117,7 @@ Ensure the following entities are configured in your Home Assistant:
 **Purpose**: Verify the Twb sensor is working correctly
 
 **Steps**:
-1. Check if `sensor.evap_twb_viewbank` entity exists
+1. Check if `sensor.viewbank_wet_bulb_temperature` entity exists
 2. Verify it has a valid temperature value
 3. Compare with manual calculation or online wet bulb calculator
 
@@ -127,7 +127,7 @@ Ensure the following entities are configured in your Home Assistant:
 - Should update when outdoor temp/humidity changes
 
 **Verification**:
-- Use Developer Tools → States to view `sensor.evap_twb_viewbank`
+- Use Developer Tools → States to view `sensor.viewbank_wet_bulb_temperature`
 - Check sensor attributes and history
 
 ### Test 7: Setpoint Change in Maintain Mode

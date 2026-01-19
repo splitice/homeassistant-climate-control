@@ -62,7 +62,7 @@ This automation controls an evaporative cooler to maintain a target temperature,
 - **Snapshot/restore (R1, R2, R8):** Ensures user settings are preserved and system can safely exit automation.
 - **Persistent loop (R7):** Allows for robust, real-time response to environment and user changes.
 - **Maintain temperature mode (R15-R16):** When temperature reaches target (within 0.3°C), switches to maintain mode which uses minimal fan speed adjustments (±1 step maximum) with a temperature error threshold (0.2°C) to prevent frequent cycling. This provides stable, quiet operation while maintaining comfort.
-- **Wet bulb temperature sensor (sensor.evap_twb_viewbank):** Pre-calculated wet bulb temperature using the Stull approximation from outdoor dry-bulb temperature and relative humidity. Used by both aggressive cooling and maintain temperature scripts for efficiency calculations.
+- **Wet bulb temperature sensor (sensor.viewbank_wet_bulb_temperature):** Pre-calculated wet bulb temperature using the Stull approximation from outdoor dry-bulb temperature and relative humidity. Used by both aggressive cooling and maintain temperature scripts for efficiency calculations.
 - **Intelligent fan_only transition (R6, R14):** Fan_only mode for pad drying is only activated when the system is at fan speed 1 and temperature is below setpoint. If fan speed is above 1, the system reduces to fan speed 1 and enters maintain mode instead, allowing the evaporative cooler to continue providing efficient cooling.
 - **Pad drying cycle (R6, R12, R18):** When at fan speed 1 and temperature crosses below setpoint, maintains fan_only mode for 5 minutes minimum to dry evaporative pads, preventing mold growth and extending pad lifespan. Early exit allowed if temperature falls >1°C below target. Fan speed ramping is applied immediately upon entering fan_only mode (including during startup), gradually reducing the fan speed from the initial speed (capped at 6) to speed 1 over a configurable duration (default 5 minutes, or 2 minutes in aggressive mode when outdoor temperature is >2°C above setpoint), providing energy savings and reduced noise while maintaining effective pad drying.
 - **Below setpoint timers (R3, R9, R10, R13, R14):** Prevents rapid cycling and allows for graceful transition to maintain mode or shutoff.
@@ -78,13 +78,13 @@ The automation requires the following Home Assistant entities to be configured:
 - `input_boolean.automatic_control` - Toggle for automatic control
 - `sensor.viewbank_temp` - Outdoor dry-bulb temperature sensor (example name - replace with your sensor)
 - `sensor.viewbank_humidity` - Outdoor relative humidity sensor (example name - replace with your sensor)
-- `sensor.evap_twb_viewbank` - Wet bulb temperature sensor (created by sensor configuration file)
+- `sensor.viewbank_wet_bulb_temperature` - Wet bulb temperature sensor (created by sensor configuration file)
 
-**Note**: The outdoor sensor entity names (`sensor.viewbank_temp` and `sensor.viewbank_humidity`) are location-specific examples. Update the `outdoor_temp_entity` and `outdoor_rh_entity` variables in the automation to match your actual outdoor sensor entity IDs. The `sensor.evap_twb_viewbank` sensor should be configured using the provided `sensor.evap_twb_viewbank.yml` file.
+**Note**: The outdoor sensor entity names (`sensor.viewbank_temp` and `sensor.viewbank_humidity`) are location-specific examples. Update the `outdoor_temp_entity` and `outdoor_rh_entity` variables in the automation to match your actual outdoor sensor entity IDs. The `sensor.viewbank_wet_bulb_temperature` sensor should be configured using the provided `sensor.viewbank_wet_bulb_temperature.yml` file.
 
 ## Wet Bulb Temperature Sensor
 
-The `sensor.evap_twb_viewbank` is a template sensor that calculates the wet bulb temperature using the Stull approximation from outdoor dry-bulb temperature and relative humidity. This pre-calculated sensor is used by both the aggressive cooling script and the maintain temperature script for efficiency calculations. To configure this sensor, add the contents of `sensor.evap_twb_viewbank.yml` to your Home Assistant configuration.
+The `sensor.viewbank_wet_bulb_temperature` is a template sensor that calculates the wet bulb temperature using the Stull approximation from outdoor dry-bulb temperature and relative humidity. This pre-calculated sensor is used by both the aggressive cooling script and the maintain temperature script for efficiency calculations. To configure this sensor, add the contents of `sensor.viewbank_wet_bulb_temperature.yml` to your Home Assistant configuration.
 
 ## Temperature Control Modes
 
@@ -112,7 +112,7 @@ The automation uses two scripts for fan speed control:
 ### evap_apply_mode_and_fan_with_twb (Aggressive Cooling)
 Used during initial cooling phase when temperature is significantly above setpoint. This script:
 
-1. Uses wet bulb temperature from `sensor.evap_twb_viewbank` (or calculates inline if sensor not provided)
+1. Uses wet bulb temperature from `sensor.viewbank_wet_bulb_temperature` (or calculates inline if sensor not provided)
 2. Determines the required saturation efficiency: η_req = (B - A_aim) / (B - Twb)
    - B = outdoor dry-bulb temperature
    - A_aim = target temperature + aim_offset (default 0.3°C)
@@ -124,7 +124,7 @@ Used during initial cooling phase when temperature is significantly above setpoi
 ### evap_maintain_temperature (Maintain Mode)
 Used when temperature is at or near setpoint for stable operation. This script:
 
-1. Uses wet bulb temperature from `sensor.evap_twb_viewbank` for base calculations
+1. Uses wet bulb temperature from `sensor.viewbank_wet_bulb_temperature` for base calculations
 2. Only changes fan speed if temperature error exceeds threshold (default 0.2°C)
 3. Makes minimal adjustments (±1 fan speed step maximum)
 4. Maintains current fan speed when within acceptable temperature range
