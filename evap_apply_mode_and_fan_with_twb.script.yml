@@ -121,7 +121,7 @@ sequence:
         {% for s in range(lo, hi + 1) %}
           {# --- Predict apparent temp at candidate fan s --- #}
           {% set T = states('sensor.home_temperature') | float(default=nan) %}
-          {% set RHin = states('sensor.home_humidity') | float(default=nan) %}
+          {% set RHin = states('sensor.viewbank_humidity') | float(default=nan) %}
           {% set hvac = states(e) %}
 
           {% if T is number and RHin is number and aim is number %}
@@ -154,7 +154,12 @@ sequence:
           {% endif %}
         {% endfor %}
 
-        {{ best_fan }}
+        {% set boost =
+             2 if best_err >= 5 else
+             1 if best_err >= 2 else
+             0 %}
+
+        {{ [1, [10, best_fan + boost] | min] | max }}
   - choose:
       - conditions:
           - condition: template
