@@ -17,7 +17,9 @@ fields:
     description: Outdoor RH sensor (%)
     example: sensor.viewbank_humidity
   twb_sensor:
-    description: Optional. Wet bulb temperature sensor (°C). If not provided, Twb is calculated inline.
+    description: >-
+      Optional. Wet bulb temperature sensor (°C). If not provided, Twb is
+      calculated inline.
     example: sensor.viewbank_wet_bulb_temperature
   fan_mode:
     description: >-
@@ -46,11 +48,11 @@ fields:
 sequence:
   - variables:
       e: "{{ evap_entity }}"
-      want_mode: "{{ hvac_mode | default(none) }}"
+      want_mode: "{{ hvac_mode | default(states(e)) }}"
       forced_fan: "{{ fan_mode | default(none) }}"
       aim_offset_v: "{{ aim_offset | default(0.3) | float }}"
-      eta1: "{{ eta_1 | default(0.85) | float }}"
-      eta10: "{{ eta_10 | default(0.65) | float }}"
+      eta1: "{{ eta_1 | default(0.8) | float }}"
+      eta10: "{{ eta_10 | default(0.55) | float }}"
       min_d: "{{ min_delta_db_wb | default(1.0) | float }}"
       max_inc_step: "{{ max_increase_step | default(4) | int }}"
       current_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
@@ -89,25 +91,38 @@ sequence:
             {{ [1, [10, (s | round(0))] | min] | max }}
           {% endif %}
         {% endif %}
-      desired_fan: |-
+      desired_fan: >-
         {% set base = desired_fan_calc | int(5) %}
+
         {% set Tin = states('sensor.home_feels_like') | float(default=nan) %}
+
         {% set err = (Tin - A) if (Tin is number and A is number) else 0 %}
 
-        {# Apply max_increase_step limit to base TWB calculation first #}
-        {% set max_allowed_base = current_fan + max_inc_step %}
-        {% set base_limited = [1, [10, [base, max_allowed_base] | min] | min] | max %}
 
-        {# Necessity-based boost: smaller differences need less aggressive increases #}
-        {# For 0.5°C difference, a modest boost is sufficient; avoid maxing out #}
+        {# Apply max_increase_step limit to base TWB calculation first #}
+
+        {% set max_allowed_base = current_fan + max_inc_step %}
+
+        {% set base_limited = [1, [10, [base, max_allowed_base] | min] | min] |
+        max %}
+
+
+        {# Necessity-based boost: smaller differences need less aggressive
+        increases #}
+
+        {# For 0.5°C difference, a modest boost is sufficient; avoid maxing out
+        #}
+
         {% set boost =
-             10 if err >= 3 else
-             4 if err >= 2 else
-             2 if err >= 1 else
-             1 if err >= 0.6 else
+             10 if err >= 5 else
+             6 if err >= 4 else
+             4 if err >= 3 else
+             2 if err >= 2 else
+             1 if err >= 1 else
              0 %}
 
         {# Apply boost on top of the limited base #}
+
         {{ [1, [10, base_limited + boost] | min] | max }}
   - choose:
       - conditions:
@@ -124,7 +139,7 @@ sequence:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ want_mode is not none and want_mode == 'off' }}"
+            value_template: "{{ want_mode is not none and want_mode != 'off' }}"
         sequence:
           - repeat:
               until:
