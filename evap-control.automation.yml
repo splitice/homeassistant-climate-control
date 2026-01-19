@@ -38,12 +38,13 @@ actions:
       tick_done: false
       T: "{{ states(temp_entity) | float(0) }}"
       S: "{{ states(setpoint_entity) | float(0) }}"
-      deadband_cooling: 0.3
+      deadband_cooling_upper: 0.3
+      deadband_cooling_lower: -0.3
       diff: >-
         {{ (states(temp_entity) | float(0)) - (states(setpoint_entity) |
         float(0)) }}
       need_cooling: "{{ diff > deadband_cooling }}"
-      at_target: "{{ diff <= deadband_cooling and diff >= -0.3 }}"
+      at_target: "{{ diff <= deadband_cooling_upper and diff >= deadband_cooling_lower }}"
       hvac: "{{ states(evap_entity) }}"
       cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
 
@@ -126,8 +127,8 @@ actions:
             diff: >-
               {{ (states(temp_entity) | float(0)) - (states(setpoint_entity) |
               float(0)) }}
-            need_cooling: "{{ diff > deadband_cooling }}"
-            at_target: "{{ diff <= deadband_cooling and diff >= -0.3 }}"
+            need_cooling: "{{ diff > deadband_cooling_upper }}"
+            at_target: "{{ diff <= deadband_cooling_upper and diff >= deadband_cooling_lower }}"
             near_target_after_setpoint_change: >-
               {{ (states(setpoint_entity) | float(0)) >= ((states(temp_entity) |
               float(0)) - 0.5) }}
