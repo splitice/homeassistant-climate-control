@@ -33,7 +33,6 @@ actions:
       fan_only_since: null
       fan_only_start_speed: null
       maintain_mode: false
-  - variables:
       wake_id: startup
       tick_done: false
       T: "{{ states(temp_entity) | float(0) }}"

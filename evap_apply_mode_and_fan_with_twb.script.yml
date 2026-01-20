@@ -106,17 +106,16 @@ sequence:
         {% set base_limited = [1, [10, [base, max_allowed_base] | min] | min] |
         max %}
 
-        
 
-        {% set A = A if (A is number) else nan %}
-        {% set aim = (A + aim_offset_v) if (A is number) else nan %}
 
-        {# Search a window around base; widen if you want more authority #}
-        {% set lo = [1, base_limited - 3] | max %}
-        {% set hi = [10, base_limited + 3] | min %}
+        {% set A = A if (A is number) else nan %} {% set aim = (A +
+        aim_offset_v) if (A is number) else nan %}
 
-        {% set best_fan = base_limited %}
-        {% set best_err = 999 %}
+        {# Search a window around base; widen if you want more authority #} {%
+        set lo = [1, base_limited - 3] | max %} {% set hi = [10, base_limited +
+        3] | min %}
+
+        {% set best_fan = base_limited %} {% set best_err = 999 %}
 
         {% for s in range(lo, hi + 1) %}
           {# --- Predict apparent temp at candidate fan s --- #}
@@ -154,12 +153,7 @@ sequence:
           {% endif %}
         {% endfor %}
 
-        {% set boost =
-             2 if best_err >= 5 else
-             1 if best_err >= 2 else
-             0 %}
-
-        {{ [1, [10, best_fan + boost] | min] | max }}
+        {{ best_fan }}
   - choose:
       - conditions:
           - condition: template
