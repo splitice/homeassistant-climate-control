@@ -16,7 +16,7 @@ Inputs:
 - pad_drying_entity: number input entity to track percent pad drying progress. (0-100%)
 - outdoor_temp_entity: Optional. Outdoor temperature sensor entity for wet-bulb calculations.
 - outdoor_humidity_entity: Optional. Outdoor humidity sensor entity for wet-bulb calculations.
-- indoor_humidity_entity: Optional. Indoor humidity sensor entity for wet-bulb calculations.
+- indoor_humidity_entity: Optional. Indoor humidity sensor entity for wet-bulb calculations. If not provided assume same as outdoor humidity.
 - indoor_temperature_entity: Optional. Indoor temperature sensor entity for wet-bulb calculations.
 - max_fan_speed_entity: Optional. Entity defining maximum fan speed (1-5). If not provided max fan speed is 10
 - min_fan_speed_entity: Optional. Entity defining minimum fan speed (1-5). If not provided min fan speed is 1
