@@ -1,0 +1,279 @@
+alias: "Evap Automation (v4)"
+description: Main control loop for evaporative cooler with pad drying and maintain/get-to-target modes
+triggers:
+  - entity_id: input_boolean.automatic_control
+    to: "on"
+    id: auto_on
+    trigger: state
+  - entity_id: input_boolean.automatic_control
+    to: "off"
+    id: auto_off
+    trigger: state
+  - event: start
+    id: ha_start
+    trigger: homeassistant
+variables:
+  evap_entity: climate.evap
+  setpoint_entity: input_number.target_temperature
+  auto_entity: input_boolean.automatic_control
+  outdoor_temp_entity: sensor.viewbank_temp
+  outdoor_humidity_entity: sensor.viewbank_humidity
+  indoor_temperature_entity: sensor.home_temperature
+  indoor_humidity_entity: sensor.viewbank_humidity
+  pad_drying_entity: input_number.pad_drying_progress
+  max_fan_speed_entity: null
+  min_fan_speed_entity: null
+  maintain_threshold: 1.0
+  pad_dry_time_speed1: 10
+  pad_dry_time_speed10: 5
+  deadband_cooling_upper: 0.3
+  deadband_cooling_lower: 0.0
+actions:
+  # Exit if automatic control is off
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ is_state(auto_entity, 'off') }}"
+        sequence:
+          - target:
+              entity_id: scene.evap_restore
+            action: scene.turn_on
+          - stop: Automatic control is off; restored snapshot.
+  
+  # Take snapshot of current evap state
+  - data:
+      scene_id: evap_restore
+      snapshot_entities:
+        - "{{ evap_entity }}"
+    action: scene.create
+  
+  # Initialize global variables
+  - variables:
+      pad_drying_previous: 0
+      temperature_change_per_minute: -999
+      pad_drying_enabled: false
+      alg_state: "initial"
+  
+  # Main control loop
+  - repeat:
+      while:
+        - condition: template
+          value_template: "{{ is_state(auto_entity, 'on') }}"
+      sequence:
+        # Calculate current state variables
+        - variables:
+            setpoint_temp: "{{ states(setpoint_entity) | float(22) }}"
+            outdoor_temp: "{{ states(outdoor_temp_entity) | float(30) }}"
+            outdoor_rh: "{{ states(outdoor_humidity_entity) | float(50) }}"
+            indoor_temp_raw: "{{ states(indoor_temperature_entity) | float(22) }}"
+            indoor_rh: "{{ states(indoor_humidity_entity) | float(50) }}"
+            cur_mode: "{{ states(evap_entity) }}"
+            cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+            
+            # Calculate wet bulb temperature
+            wet_bulb_temp: |-
+              {% set B = states(outdoor_temp_entity) | float(30) %}
+              {% set RH = states(outdoor_humidity_entity) | float(50) %}
+              {% if RH > 0 %}
+                {{
+                  (
+                    B * (0.151977 * (RH + 8.313659) ** 0.5) | atan
+                    + (B + RH) | atan
+                    - (RH - 1.676331) | atan
+                    + 0.00391838 * RH ** 1.5 * (0.023101 * RH) | atan
+                    - 4.686035
+                  )
+                }}
+              {% else %}
+                {{ B }}
+              {% endif %}
+            
+            # Calculate indoor feels like temperature with current fan speed
+            indoor_feels_like_temp: |-
+              {% set T = states(indoor_temperature_entity) | float(22) %}
+              {% set RH = states(indoor_humidity_entity) | float(50) %}
+              {% set fan = state_attr(evap_entity, 'fan_mode') | int(1) %}
+              {% set mode = states(evap_entity) %}
+              {% set fan_frac = (fan - 1) / 9 %}
+              
+              {% if mode == 'cool' %}
+                {% set cool_temp_drop_max = 4.0 %}
+                {% set T_eff = T - (cool_temp_drop_max * fan_frac) %}
+              {% elif mode == 'fan_only' %}
+                {% set cool_temp_drop_max = 2.0 %}
+                {% set T_eff = T - (cool_temp_drop_max * fan_frac) %}
+              {% else %}
+                {% set T_eff = T %}
+              {% endif %}
+              
+              {% set v_min = 0.10 %}
+              {% set v_max = 1.50 %}
+              {% set v = v_min + (fan - 1) * (v_max - v_min) / 9 %}
+              {% set es = 6.105 * (2.718281828 ** (17.27 * T_eff / (237.7 + T_eff))) %}
+              {% set e = (RH / 100.0) * es %}
+              {% set AT = T_eff + 0.33 * e - 0.70 * v - 4.0 %}
+              {{ AT }}
+            
+            diff: "{{ indoor_feels_like_temp - setpoint_temp }}"
+            at_target: "{{ diff <= deadband_cooling_upper and diff >= deadband_cooling_lower }}"
+            should_maintain: "{{ (diff | abs) <= maintain_threshold }}"
+            needs_cooling: "{{ diff > deadband_cooling_upper }}"
+        
+        # Reset alg_state
+        - variables:
+            alg_state: "initial"
+        
+        # Handle cooling needs
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ needs_cooling }}"
+              sequence:
+                - variables:
+                    pad_drying_enabled: false
+                    alg_state: |-
+                      {% if should_maintain %}
+                        maintain
+                      {% else %}
+                        get_to_target
+                      {% endif %}
+                
+                # Call appropriate script based on mode
+                - choose:
+                    # Maintain temperature mode
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ should_maintain }}"
+                      sequence:
+                        - action: script.evap_maintain_temperature_v4
+                          data:
+                            evap_entity: "{{ evap_entity }}"
+                            setpoint_entity: "{{ setpoint_entity }}"
+                            outdoor_temp_entity: "{{ outdoor_temp_entity }}"
+                            outdoor_humidity_entity: "{{ outdoor_humidity_entity }}"
+                            indoor_temperature_entity: "{{ indoor_temperature_entity }}"
+                            indoor_humidity_entity: "{{ indoor_humidity_entity }}"
+                            at_target: "{{ at_target }}"
+                            deadband_cooling_upper: "{{ deadband_cooling_upper }}"
+                            deadband_cooling_lower: "{{ deadband_cooling_lower }}"
+                            min_fan_speed_entity: "{{ min_fan_speed_entity }}"
+                            max_fan_speed_entity: "{{ max_fan_speed_entity }}"
+                            temperature_change_per_minute: "{{ temperature_change_per_minute }}"
+                  # Get to target mode
+                  default:
+                    - action: script.evap_get_to_target_temperature
+                      data:
+                        evap_entity: "{{ evap_entity }}"
+                        setpoint_entity: "{{ setpoint_entity }}"
+                        outdoor_temp_entity: "{{ outdoor_temp_entity }}"
+                        outdoor_humidity_entity: "{{ outdoor_humidity_entity }}"
+                        indoor_temperature_entity: "{{ indoor_temperature_entity }}"
+                        indoor_humidity_entity: "{{ indoor_humidity_entity }}"
+                        min_fan_speed_entity: "{{ min_fan_speed_entity }}"
+                        max_fan_speed_entity: "{{ max_fan_speed_entity }}"
+            
+            # Start pad drying if transitioning from cool mode
+            - conditions:
+                - condition: template
+                  value_template: "{{ cur_mode == 'cool' }}"
+              sequence:
+                - variables:
+                    alg_state: "pad_drying_start"
+                    pad_drying_enabled: true
+                
+                # Reset pad drying progress
+                - action: input_number.set_value
+                  data:
+                    entity_id: "{{ pad_drying_entity }}"
+                    value: 0
+                
+                - action: script.evap_pad_drying
+                  data:
+                    evap_entity: "{{ evap_entity }}"
+                    pad_drying_entity: "{{ pad_drying_entity }}"
+                    pad_dry_time_speed1: "{{ pad_dry_time_speed1 }}"
+                    pad_dry_time_speed10: "{{ pad_dry_time_speed10 }}"
+                    pad_drying_previous: 0
+                    setpoint_entity: "{{ setpoint_entity }}"
+                    indoor_temp_entity: "{{ indoor_temperature_entity }}"
+                    min_fan_speed_entity: "{{ min_fan_speed_entity }}"
+                    max_fan_speed_entity: "{{ max_fan_speed_entity }}"
+                
+                - variables:
+                    pad_drying_previous: "{{ as_timestamp(now()) | int }}"
+            
+            # Continue pad drying if already in progress
+            - conditions:
+                - condition: template
+                  value_template: "{{ pad_drying_enabled == true }}"
+              sequence:
+                - variables:
+                    alg_state: "pad_drying"
+                
+                - action: script.evap_pad_drying
+                  data:
+                    evap_entity: "{{ evap_entity }}"
+                    pad_drying_entity: "{{ pad_drying_entity }}"
+                    pad_dry_time_speed1: "{{ pad_dry_time_speed1 }}"
+                    pad_dry_time_speed10: "{{ pad_dry_time_speed10 }}"
+                    pad_drying_previous: "{{ pad_drying_previous }}"
+                    setpoint_entity: "{{ setpoint_entity }}"
+                    indoor_temp_entity: "{{ indoor_temperature_entity }}"
+                    min_fan_speed_entity: "{{ min_fan_speed_entity }}"
+                    max_fan_speed_entity: "{{ max_fan_speed_entity }}"
+                
+                - variables:
+                    pad_drying_previous: "{{ as_timestamp(now()) | int }}"
+        
+        # Record state after changes
+        - variables:
+            new_fan_speed: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+            new_fan_mode: "{{ states(evap_entity) }}"
+        
+        # Log changes and wait
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ new_fan_speed != cur_fan or new_fan_mode != cur_mode }}"
+              sequence:
+                - action: logbook.log
+                  data:
+                    name: "Evap Control v4"
+                    message: >-
+                      Evap control alg {{ alg_state }} adjusted mode from {{ cur_mode }} to {{ new_fan_mode }}, 
+                      fan speed from {{ cur_fan }} to {{ new_fan_speed }} due to temp diff {{ diff | round(2) }}°C
+                
+                - variables:
+                    start_wait: "{{ now() }}"
+                
+                - wait_for_trigger:
+                    - entity_id: "{{ setpoint_entity }}"
+                      trigger: state
+                    - entity_id: "{{ auto_entity }}"
+                      trigger: state
+                  timeout: "00:01:00"
+                  continue_on_timeout: true
+          default:
+            - variables:
+                start_wait: "{{ now() }}"
+            
+            - wait_for_trigger:
+                - entity_id: "{{ setpoint_entity }}"
+                  trigger: state
+                - entity_id: "{{ auto_entity }}"
+                  trigger: state
+              timeout: "00:00:30"
+              continue_on_timeout: true
+        
+        # Calculate temperature change rate
+        - variables:
+            new_temperature_raw: "{{ states(indoor_temperature_entity) | float(22) }}"
+            elapsed_time: "{{ (as_timestamp(now()) - as_timestamp(start_wait)) | int }}"
+            temperature_change_per_minute: |-
+              {% if elapsed_time > 5 %}
+                {{ (new_temperature_raw - indoor_temp_raw) / (elapsed_time / 60) }}
+              {% else %}
+                -999
+              {% endif %}
+
+mode: restart
