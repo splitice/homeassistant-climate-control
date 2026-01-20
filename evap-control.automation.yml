@@ -149,6 +149,7 @@ actions:
                           value_template: "{{ should_maintain }}"
                       sequence:
                         - action: script.evap_maintain_temperature_v4
+                          continue_on_error: true
                           data:
                             evap_entity: "{{ evap_entity }}"
                             setpoint_entity: "{{ setpoint_entity }}"
@@ -165,6 +166,7 @@ actions:
                   # Get to target mode
                   default:
                     - action: script.evap_get_to_target_temperature
+                      continue_on_error: true
                       data:
                         evap_entity: "{{ evap_entity }}"
                         setpoint_entity: "{{ setpoint_entity }}"
@@ -191,6 +193,7 @@ actions:
                     value: 0
                 
                 - action: script.evap_pad_drying
+                  continue_on_error: true
                   data:
                     evap_entity: "{{ evap_entity }}"
                     pad_drying_entity: "{{ pad_drying_entity }}"
@@ -214,6 +217,7 @@ actions:
                     alg_state: "pad_drying"
                 
                 - action: script.evap_pad_drying
+                  continue_on_error: true
                   data:
                     evap_entity: "{{ evap_entity }}"
                     pad_drying_entity: "{{ pad_drying_entity }}"
