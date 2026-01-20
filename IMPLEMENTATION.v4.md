@@ -60,7 +60,7 @@ repeat while(auto_entity is on) {
         cur_fan = current fan speed of evap_entity
         alg_state = "initial"
     }
-    if (needs_cooling) {
+    if (should_maintain or needs_cooling) {
         set pad_drying_enabled = false
         if (should_maintain) {
             set alg_state = "maintain"
@@ -137,7 +137,7 @@ set:
   air_temp = wet bulb temperature using outdoor_temp_entity, outdoor_humidity_entity
   feels_like_temp = feels like algorithm using wet_bulb_temp, indoor_humidity_entity
   diff = feels_like_temp - setpoint_temp
-  target_mode = if (not at_target and below setpoint_temp) then fan_only else cool
+  target_mode = if (not at_target and diff < -0.9 and current_fan_speed <= 2) then fan_only else cool
   target_speed = target_speed_algorithm
 
 call set_evap_target: target_mode, target_speed, evap_entity, min_fan_speed_entity, max_fan_speed_entity
