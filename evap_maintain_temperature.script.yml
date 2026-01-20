@@ -90,7 +90,9 @@ sequence:
         {% set v_min = 0.10 %}
         {% set v_max = 1.50 %}
         {% set v = v_min + (fan - 1) * (v_max - v_min) / 9 %}
-        {% set es = 6.105 * (2.718281828 ** (17.27 * T_eff / (237.7 + T_eff))) %}
+        {# Euler's number for saturation vapor pressure calculation #}
+        {% set e_constant = 2.71828 %}
+        {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
         {% set e = (RH / 100.0) * es %}
         {% set AT = T_eff + 0.33 * e - 0.70 * v - 4.0 %}
         {{ AT }}
@@ -141,7 +143,9 @@ sequence:
             {% set v_min = 0.10 %}
             {% set v_max = 1.50 %}
             {% set v = v_min + (test_speed - 1) * (v_max - v_min) / 9 %}
-            {% set es = 6.105 * (2.718281828 ** (17.27 * T_eff / (237.7 + T_eff))) %}
+            {# Euler's number for saturation vapor pressure calculation #}
+            {% set e_constant = 2.71828 %}
+            {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
             {% set e = (RH / 100.0) * es %}
             {% set AT = T_eff + 0.33 * e - 0.70 * v - 4.0 %}
             {% set error = (AT - setpoint) | abs %}

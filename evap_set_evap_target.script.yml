@@ -106,10 +106,12 @@ sequence:
           - condition: template
             value_template: "{{ final_speed > 0 and current_fan_speed_after_mode != final_speed and desired_speed_raw != -1 }}"
         sequence:
+          - variables:
+              max_retries: 15  # Maximum attempts to set fan speed
           - repeat:
               while:
                 - condition: template
-                  value_template: "{{ state_attr(e, 'fan_mode') | int(1) != final_speed and repeat.index < 15 }}"
+                  value_template: "{{ state_attr(e, 'fan_mode') | int(1) != final_speed and repeat.index < max_retries }}"
               sequence:
                 - action: climate.set_fan_mode
                   data:

@@ -104,8 +104,14 @@ sequence:
           {% set elapsed_seconds = as_timestamp(now()) - pad_start_time %}
           {% set elapsed_minutes = elapsed_seconds / 60 %}
           {% set current_fan = state_attr(evap_entity, 'fan_mode') | int(1) %}
-          {% set dry_time_minutes = dry_time_1 + (current_fan - 1) * (dry_time_10 - dry_time_1) / 9 %}
-          {% set percent_delta = (elapsed_minutes / dry_time_minutes) * 100 %}
+          {# Linear interpolation of drying time based on fan speed #}
+          {# Handle edge case where both drying times are equal #}
+          {% if dry_time_1 == dry_time_10 %}
+            {% set dry_time_minutes = dry_time_1 %}
+          {% else %}
+            {% set dry_time_minutes = dry_time_1 + (current_fan - 1) * (dry_time_10 - dry_time_1) / 9 %}
+          {% endif %}
+          {% set percent_delta = (elapsed_minutes / dry_time_minutes) * 100 if dry_time_minutes > 0 else 0 %}
           {% set new_total = pad_dry_percent + percent_delta %}
           {{ [100, new_total] | min }}
         {% endif %}

@@ -87,8 +87,10 @@ sequence:
           {% set v_max = 1.50 %}
           {% set v = v_min + (test_speed - 1) * (v_max - v_min) / 9 %}
           
-          {# Calculate feels like temperature #}
-          {% set es = 6.105 * (2.718281828 ** (17.27 * T_eff / (237.7 + T_eff))) %}
+          {# Calculate feels like temperature using Steadman apparent temperature formula #}
+          {# Euler's number for saturation vapor pressure calculation #}
+          {% set e_constant = 2.71828 %}
+          {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
           {% set e = (RH / 100.0) * es %}
           {% set AT = T_eff + 0.33 * e - 0.70 * v - 4.0 %}
           
@@ -100,7 +102,10 @@ sequence:
           {% if temp_drop > 0.1 %}
             {# Estimate minutes = total_drop / (drop_per_minute) #}
             {# Assume drop_per_minute scales with temp_drop and fan speed #}
-            {% set drop_per_minute = temp_drop / 10 * (test_speed / 5) %}
+            {# Constants: 10 = base time factor (minutes), 5 = reference fan speed #}
+            {% set base_time_factor = 10 %}
+            {% set reference_fan_speed = 5 %}
+            {% set drop_per_minute = temp_drop / base_time_factor * (test_speed / reference_fan_speed) %}
             {% set estimated_minutes = total_drop_needed / drop_per_minute if drop_per_minute > 0 else 999 %}
           {% else %}
             {% set estimated_minutes = 999 %}
