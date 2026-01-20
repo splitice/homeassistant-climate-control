@@ -248,19 +248,30 @@ actions:
                 
                 - variables:
                     start_wait: "{{ now() }}"
-                    prev_setpoint: "{{ states(setpoint_entity) }}"
-                    prev_auto_state: "{{ states(auto_entity) }}"
-                
-                - wait_template: "{{ states(setpoint_entity) != prev_setpoint or states(auto_entity) != prev_auto_state }}"
+                    
+                    
+                - wait_for_trigger:
+                    - entity_id: input_number.target_temperature
+                      id: setpoint_changed
+                      trigger: state
+                    - entity_id: input_boolean.automatic_control
+                      to: "off"
+                      id: auto_turned_off
+                      trigger: state
                   timeout: "00:01:00"
                   continue_on_timeout: true
           default:
             - variables:
                 start_wait: "{{ now() }}"
-                prev_setpoint: "{{ states(setpoint_entity) }}"
-                prev_auto_state: "{{ states(auto_entity) }}"
             
-            - wait_template: "{{ states(setpoint_entity) != prev_setpoint or states(auto_entity) != prev_auto_state }}"
+            - wait_for_trigger:
+                - entity_id: input_number.target_temperature
+                  id: setpoint_changed
+                  trigger: state
+                - entity_id: input_boolean.automatic_control
+                  to: "off"
+                  id: auto_turned_off
+                  trigger: state
               timeout: "00:00:30"
               continue_on_timeout: true
         
