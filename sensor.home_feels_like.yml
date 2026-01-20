@@ -1,0 +1,68 @@
+template:
+  - sensor:
+      - name: "Home Feels Like"
+        unique_id: home_feels_like
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        availability: >-
+          {{
+            states('sensor.home_temperature') not in ['unknown','unavailable','none']
+            and states('sensor.viewbank_humidity') not in ['unknown','unavailable','none']
+          }}
+        state: >-
+          {% set T = states('sensor.home_temperature') | float %}
+          {% set RH = states('sensor.viewbank_humidity') | float %}
+
+          {% set hvac = states('climate.evap') %}
+          {% set fan_raw = state_attr('climate.evap','fan_mode') %}
+          {% set fan = fan_raw | int(0) %}
+
+          {# If evap is off/unknown/unavailable OR fan_mode is off/0/missing -> base feels-like only #}
+          {% set evap_inactive =
+              hvac in ['off','fan_only','unknown','unavailable','none','']
+              or fan_raw in [none, 'off', '0', 0]
+              or fan <= 0
+          %}
+
+          {# Base feels-like: Steadman apparent temperature with v=0 (no fan effect) #}
+          {% set es_base = 6.105 * (2.718281828 ** (17.27 * T / (237.7 + T))) %}
+          {% set e_base = (RH / 100.0) * es_base %}
+          {% set AT_base = T + 0.33 * e_base - 4.0 %}
+
+          {% if evap_inactive %}
+            {{ AT_base | round(1) }}
+          {% else %}
+
+            {# Active: include air movement and (optionally) cool-mode adjustments #}
+            {% set fan = [1, [fan, 10] | min] | max %}
+            {% set fan_frac = (fan - 1) / 9 %}
+
+            {# Tune these two to suit your unit (only used when hvac == 'cool') #}
+            {% set cool_temp_drop_max = 3.0 %}   {# °C max drop at fan 10 #}
+            {% set cool_rh_boost_max = 12.0 %}   {# %RH max increase at fan 10 #}
+
+            {% set T_eff = T %}
+            {% set RH_eff = RH %}
+            {% if hvac == 'cool' %}
+              {% set T_eff = T - (cool_temp_drop_max * fan_frac) %}
+              {% set RH_eff = [0, [RH + (cool_rh_boost_max * fan_frac), 100] | min] | max %}
+            {% endif %}
+
+            {# Map fan 1..10 -> estimated air speed v (m/s) #}
+            {% set v_min = 0.10 %}
+            {% set v_max = 1.50 %}
+            {% set v = v_min + (fan - 1) * (v_max - v_min) / 9 %}
+
+            {# Steadman apparent temperature (°C) #}
+            {% set es = 6.105 * (2.718281828 ** (17.27 * T_eff / (237.7 + T_eff))) %}
+            {% set e = (RH_eff / 100.0) * es %}
+            {% set AT = T_eff + 0.33 * e - 0.70 * v - 4.0 %}
+
+            {{ AT | round(1) }}
+          {% endif %}
+        attributes:
+          air_temp_c: "{{ states('sensor.home_temperature') | float(0) }}"
+          humidity_pct: "{{ states('sensor.viewbank_humidity') | float(0) }}"
+          evap_state: "{{ states('climate.evap') }}"
+          evap_fan_mode: "{{ state_attr('climate.evap','fan_mode') }}"

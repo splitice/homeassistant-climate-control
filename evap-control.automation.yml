@@ -32,16 +32,18 @@ actions:
       below_since: null
       fan_only_since: null
       fan_only_start_speed: null
-  - variables:
+      maintain_mode: false
       wake_id: startup
       tick_done: false
       T: "{{ states(temp_entity) | float(0) }}"
       S: "{{ states(setpoint_entity) | float(0) }}"
-      deadband_cooling: 0.3
+      deadband_cooling_upper: 0.3
+      deadband_cooling_lower: -0.3
       diff: >-
         {{ (states(temp_entity) | float(0)) - (states(setpoint_entity) |
         float(0)) }}
       need_cooling: "{{ diff > deadband_cooling }}"
+      at_target: "{{ diff <= deadband_cooling_upper and diff >= deadband_cooling_lower }}"
       hvac: "{{ states(evap_entity) }}"
       cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
 
@@ -61,6 +63,8 @@ actions:
             value_template: "{{ need_cooling }}"
         sequence:
           # R5: If cooling is needed, ensure HVAC is in cool mode with Twb-scaled fan
+          - variables:
+              maintain_mode: false
           - action: script.evap_apply_mode_and_fan_with_twb
             data:
               evap_entity: "{{ evap_entity }}"
@@ -85,6 +89,14 @@ actions:
           - wait_template: "{{ states(evap_entity) == 'fan_only' }}"
             timeout: "00:00:15"
             continue_on_timeout: true
+          # Apply ramping during startup
+          - action: script.evap_ramp_fan_in_fan_only
+            data:
+              evap_entity: "{{ evap_entity }}"
+              fan_only_since: "{{ fan_only_since }}"
+              fan_only_start_speed: "{{ fan_only_start_speed }}"
+              outdoor_temp_entity: "{{ outdoor_temp_entity }}"
+              setpoint_entity: "{{ setpoint_entity }}"
           - variables:
               tick_done: true
   - repeat:
@@ -93,7 +105,7 @@ actions:
           value_template: "{{ is_state(auto_entity, 'on') }}"
       sequence:
         - wait_for_trigger:
-            - entity_id: sensor.home_temperature
+            - entity_id: sensor.home_feels_like
               id: temp_changed
               trigger: state
             - entity_id: input_number.target_temperature
@@ -114,7 +126,8 @@ actions:
             diff: >-
               {{ (states(temp_entity) | float(0)) - (states(setpoint_entity) |
               float(0)) }}
-            need_cooling: "{{ diff > deadband_cooling }}"
+            need_cooling: "{{ diff > deadband_cooling_upper }}"
+            at_target: "{{ diff <= deadband_cooling_upper and diff >= deadband_cooling_lower }}"
             near_target_after_setpoint_change: >-
               {{ (states(setpoint_entity) | float(0)) >= ((states(temp_entity) |
               float(0)) - 0.5) }}
@@ -187,6 +200,8 @@ actions:
                     need_cooling }}
               sequence:
                 # R11: If off and need cooling, turn on with Twb-scaled fan
+                - variables:
+                    maintain_mode: false
                 - action: script.evap_apply_mode_and_fan_with_twb
                   data:
                     evap_entity: "{{ evap_entity }}"
@@ -199,6 +214,25 @@ actions:
         - variables:
             hvac: "{{ states(evap_entity) }}"
             cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+        
+        # Switch to maintain mode when target is reached
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ at_target and not maintain_mode and hvac == 'cool' }}"
+              sequence:
+                - variables:
+                    maintain_mode: true
+        
+        # Exit maintain mode if we need significant cooling again
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ maintain_mode and need_cooling }}"
+              sequence:
+                - variables:
+                    maintain_mode: false
+        
         - choose:
             # R12: If in fan_only and need cooling, switch to cool with Twb-scaled fan (but respect drying cycle)
             - conditions:
@@ -210,6 +244,7 @@ actions:
                 - variables:
                     fan_only_since: null
                     fan_only_start_speed: null
+                    maintain_mode: false
                 - action: script.evap_apply_mode_and_fan_with_twb
                   data:
                     evap_entity: "{{ evap_entity }}"
@@ -237,23 +272,46 @@ actions:
                     tick_done: true
                     fan_only_since: null
                     fan_only_start_speed: null
-            # R14: If below setpoint for 5m, switch from cool to fan_only with Twb-scaled fan
+            # R14: If below setpoint for 5m, check if we can maintain with fan speed 1
+            # Only switch to fan_only if at fan speed 1 and still below target
             - conditions:
                 - condition: template
                   value_template: >-
                     {{ not tick_done and below_5m and hvac == 'cool' }}
               sequence:
-                - variables:
-                    fan_only_since: "{{ now() }}"
-                    fan_only_start_speed: "{{ cur_fan }}"
-                - action: script.evap_apply_mode_and_fan_with_twb
-                  data:
-                    evap_entity: "{{ evap_entity }}"
-                    hvac_mode: fan_only
-                    setpoint_entity: "{{ setpoint_entity }}"
-                    outdoor_temp_entity: "{{ outdoor_temp_entity }}"
-                    outdoor_rh_entity: "{{ outdoor_rh_entity }}"
-                    fan_mode: "{{ cur_fan }}"
+                - choose:
+                    # If fan speed is above 1, reduce to 1 and stay in cool mode
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ cur_fan > 1 }}"
+                      sequence:
+                        - action: script.evap_maintain_temperature
+                          data:
+                            evap_entity: "{{ evap_entity }}"
+                            setpoint_entity: "{{ setpoint_entity }}"
+                            outdoor_temp_entity: "{{ outdoor_temp_entity }}"
+                            twb_sensor: sensor.viewbank_wet_bulb_temperature
+                            hvac_mode: cool
+                            fan_mode: "1"
+                        - variables:
+                            maintain_mode: true
+                    # If already at fan speed 1 and still below target, switch to fan_only to dry pads
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ cur_fan == 1 }}"
+                      sequence:
+                        - variables:
+                            fan_only_since: "{{ now() }}"
+                            fan_only_start_speed: "{{ cur_fan }}"
+                            maintain_mode: false
+                        - action: script.evap_apply_mode_and_fan_with_twb
+                          data:
+                            evap_entity: "{{ evap_entity }}"
+                            hvac_mode: fan_only
+                            setpoint_entity: "{{ setpoint_entity }}"
+                            outdoor_temp_entity: "{{ outdoor_temp_entity }}"
+                            outdoor_rh_entity: "{{ outdoor_rh_entity }}"
+                            fan_mode: "{{ cur_fan }}"
                 - variables:
                     tick_done: true
 
@@ -301,9 +359,28 @@ actions:
                 - condition: template
                   value_template: >-
                     {{ not tick_done and states(evap_entity) != 'off' and
-                    hvac_mode == 'cool' and
-                    fan_only_since is none }}
+                    hvac == 'cool' and
+                    fan_only_since is none and
+                    maintain_mode == true }}
               sequence:
+                # Use maintain temperature script for stable fan control
+                - action: script.evap_maintain_temperature
+                  data:
+                    evap_entity: "{{ evap_entity }}"
+                    setpoint_entity: "{{ setpoint_entity }}"
+                    outdoor_temp_entity: "{{ outdoor_temp_entity }}"
+                    twb_sensor: sensor.viewbank_wet_bulb_temperature
+                - variables:
+                    tick_done: true
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {{ not tick_done and states(evap_entity) != 'off' and
+                    hvac == 'cool' and
+                    fan_only_since is none and
+                    maintain_mode != true }}
+              sequence:
+                # Use standard script for aggressive cooling
                 - action: script.evap_apply_mode_and_fan_with_twb
                   data:
                     evap_entity: "{{ evap_entity }}"
@@ -333,8 +410,9 @@ actions:
 mode: restart
 variables:
   evap_entity: climate.evap
-  temp_entity: sensor.home_temperature
+  temp_entity: sensor.home_feels_like
   setpoint_entity: input_number.target_temperature
   auto_entity: input_boolean.automatic_control
   outdoor_temp_entity: sensor.viewbank_temp
   outdoor_rh_entity: sensor.viewbank_humidity
+  twb_sensor_entity: sensor.viewbank_wet_bulb_temperature

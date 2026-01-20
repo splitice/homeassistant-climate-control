@@ -1,0 +1,23 @@
+- platform: template
+  sensors:
+    evap_twb_viewbank:
+      friendly_name: "Evaporative Cooler Wet Bulb Temperature"
+      unit_of_measurement: "°C"
+      # NOTE: Replace sensor.viewbank_temp and sensor.viewbank_humidity
+      # with your actual outdoor temperature and humidity sensor entity IDs
+      value_template: >-
+        {% set B = states('sensor.viewbank_temp') | float(none) %}
+        {% set RH = states('sensor.viewbank_humidity') | float(none) %}
+        {% if B is not none and RH is not none and RH > 0 %}
+          {{
+            (
+              B * (0.151977 * (RH + 8.313659) ** 0.5) | atan
+              + (B + RH) | atan
+              - (RH - 1.676331) | atan
+              + 0.00391838 * RH ** 1.5 * (0.023101 * RH) | atan
+              - 4.686035
+            ) | round(2)
+          }}
+        {% else %}
+          unavailable
+        {% endif %}

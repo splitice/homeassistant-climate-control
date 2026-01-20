@@ -16,6 +16,11 @@ fields:
   outdoor_rh_entity:
     description: Outdoor RH sensor (%)
     example: sensor.viewbank_humidity
+  twb_sensor:
+    description: >-
+      Optional. Wet bulb temperature sensor (°C). If not provided, Twb is
+      calculated inline.
+    example: sensor.viewbank_wet_bulb_temperature
   fan_mode:
     description: >-
       Optional. If provided, forces this fan speed (string/number 1-10). If
@@ -43,11 +48,11 @@ fields:
 sequence:
   - variables:
       e: "{{ evap_entity }}"
-      want_mode: "{{ hvac_mode | default(none) }}"
+      want_mode: "{{ hvac_mode | default(states(e)) }}"
       forced_fan: "{{ fan_mode | default(none) }}"
       aim_offset_v: "{{ aim_offset | default(0.3) | float }}"
-      eta1: "{{ eta_1 | default(0.85) | float }}"
-      eta10: "{{ eta_10 | default(0.65) | float }}"
+      eta1: "{{ eta_1 | default(0.8) | float }}"
+      eta10: "{{ eta_10 | default(0.55) | float }}"
       min_d: "{{ min_delta_db_wb | default(1.0) | float }}"
       max_inc_step: "{{ max_increase_step | default(4) | int }}"
       current_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
@@ -55,7 +60,9 @@ sequence:
       B: "{{ states(outdoor_temp_entity) | float(default=nan) }}"
       RH: "{{ states(outdoor_rh_entity) | float(default=nan) }}"
       Twb: |-
-        {% if B is not number or RH is not number or RH <= 0 %}
+        {% if twb_sensor is defined and twb_sensor is not none %}
+          {{ states(twb_sensor) | float(default=nan) }}
+        {% elif B is not number or RH is not number or RH <= 0 %}
           {{ nan }}
         {% else %}
           {{
@@ -84,26 +91,69 @@ sequence:
             {{ [1, [10, (s | round(0))] | min] | max }}
           {% endif %}
         {% endif %}
-      desired_fan: |-
+      desired_fan: >-
         {% set base = desired_fan_calc | int(5) %}
-        {% set Tin = states('sensor.home_temperature') | float(default=nan) %}
+
+        {% set Tin = states('sensor.home_feels_like') | float(default=nan) %}
+
         {% set err = (Tin - A) if (Tin is number and A is number) else 0 %}
 
+
         {# Apply max_increase_step limit to base TWB calculation first #}
+
         {% set max_allowed_base = current_fan + max_inc_step %}
-        {% set base_limited = [1, [10, [base, max_allowed_base] | min] | min] | max %}
 
-        {# Necessity-based boost: smaller differences need less aggressive increases #}
-        {# For 0.5°C difference, a modest boost is sufficient; avoid maxing out #}
-        {% set boost =
-             10 if err >= 3 else
-             4 if err >= 2 else
-             2 if err >= 1 else
-             1 if err >= 0.6 else
-             0 %}
+        {% set base_limited = [1, [10, [base, max_allowed_base] | min] | min] |
+        max %}
 
-        {# Apply boost on top of the limited base #}
-        {{ [1, [10, base_limited + boost] | min] | max }}
+
+
+        {% set A = A if (A is number) else nan %} {% set aim = (A +
+        aim_offset_v) if (A is number) else nan %}
+
+        {# Search a window around base; widen if you want more authority #} {%
+        set lo = [1, base_limited - 3] | max %} {% set hi = [10, base_limited +
+        3] | min %}
+
+        {% set best_fan = base_limited %} {% set best_err = 999 %}
+
+        {% for s in range(lo, hi + 1) %}
+          {# --- Predict apparent temp at candidate fan s --- #}
+          {% set T = states('sensor.home_temperature') | float(default=nan) %}
+          {% set RHin = states('sensor.viewbank_humidity') | float(default=nan) %}
+          {% set hvac = states(e) %}
+
+          {% if T is number and RHin is number and aim is number %}
+            {% set fan_frac = (s - 1) / 9 %}
+            {% set cool_temp_drop_max = 3.0 %}
+            {% set cool_rh_boost_max = 12.0 %}
+
+            {% set T_eff = T %}
+            {% set RH_eff = RHin %}
+            {% if hvac == 'cool' %}
+              {% set T_eff = T - (cool_temp_drop_max * fan_frac) %}
+              {% set RH_eff = [0, [RHin + (cool_rh_boost_max * fan_frac), 100] | min] | max %}
+            {% endif %}
+
+            {% set v_min = 0.10 %}
+            {% set v_max = 1.50 %}
+            {% set v = v_min + (s - 1) * (v_max - v_min) / 9 %}
+
+            {% set es = 6.105 * (2.718281828 ** (17.27 * T_eff / (237.7 + T_eff))) %}
+            {% set e_v = (RH_eff / 100.0) * es %}
+            {% set AT = T_eff + 0.33 * e_v - 0.70 * v - 4.0 %}
+
+            {# Error relative to target "aim" apparent temp #}
+            {% set err = (AT - aim) | abs %}
+
+            {% if err < best_err %}
+              {% set best_err = err %}
+              {% set best_fan = s %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+
+        {{ best_fan }}
   - choose:
       - conditions:
           - condition: template
@@ -119,7 +169,7 @@ sequence:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ want_mode is not none and want_mode == 'off' }}"
+            value_template: "{{ want_mode is not none and want_mode != 'off' }}"
         sequence:
           - repeat:
               until:
