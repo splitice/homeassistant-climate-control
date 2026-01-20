@@ -58,6 +58,7 @@ sequence:
             value_template: "{{ current_mode != transition_mode }}"
         sequence:
           - action: climate.set_hvac_mode
+            continue_on_error: true
             data:
               entity_id: "{{ e }}"
               hvac_mode: "{{ transition_mode }}"
@@ -114,6 +115,7 @@ sequence:
                   value_template: "{{ state_attr(e, 'fan_mode') | int(1) != final_speed and repeat.index < max_retries }}"
               sequence:
                 - action: climate.set_fan_mode
+                  continue_on_error: true
                   data:
                     entity_id: "{{ e }}"
                     fan_mode: "{{ final_speed }}"
