@@ -43,38 +43,64 @@ take snapshot of current evap_entity state as scene.evap_restore
 set global variables {
     initialise state variables as defaults / nil
     pad_drying_previous = 0
+    temperature_change_per_minute = -999
 }
 
 repeat while(auto_entity is on) {    
     set {
         setpoint_temp = state of setpoint_entity
         wet_bulb_temp = wet bulb temperature using outdoor_temp_entity, outdoor_humidity_entity
-        indoor_temp = state of indoor_temperature_entity
-        indoor_feels_like_temp = feels like algorithm using indoor_temp, indoor_humidity_entity, fan_speed
+        indoor_temp_raw = state of indoor_temperature_entity
+        indoor_feels_like_temp = feels like algorithm using indoor_temp_raw, indoor_humidity_entity, fan_speed
         diff = indoor_feels_like_temp - setpoint_temp
         at_target = (diff <= deadband_cooling_upper and diff >= deadband_cooling_lower)
         should_maintain = (abs(diff) <= maintain_threshold)
         needs_cooling = (diff > deadband_cooling_upper)
         cur_mode = current state of evap_entity
         cur_fan = current fan speed of evap_entity
+        alg_state = "initial"
     }
     if (needs_cooling) {
         set pad_drying_enabled = false
         if (should_maintain) {
-            call script evap_maintain_temperature with {
-                at_target
-            }
+            set alg_state = "maintain"
+            call script evap_maintain_temperature
         } else {
+            set alg_state = "get_to_target"
             call script evap_get_to_target_temperature
         }
     } else if (cur_mode == 'cool') {
+        set alg_state = "pad_drying_start"
         call script evap_pad_drying with: pad_drying_previous=0, evap_entity, pad_drying_entity, pad_dry_time_speed1, pad_dry_time_speed10
         set pad_drying_previous = now
     } else if (pad_drying_enabled is true) {
+        set alg_state = "pad_drying"
         call script evap_pad_drying with: pad_drying_previous, evap_entity, pad_drying_entity, pad_dry_time_speed1, pad_dry_time_speed10
+        set pad_drying_previous = now
     }
 
-    wait for target_temperature_entity, or auto_entity change for 30 seconds
+    set {
+        new_fan_speed = current fan speed of evap_entity
+        new_fan_mode = current state of evap_entity
+    }
+
+    if (new_fan_speed != cur_fan or new_fan_mode != cur_mode) {
+        log "Evap control alg {{ alg_state }} adjusted mode from {{ cur_mode }} to {{ new_fan_mode }}, fan speed from {{ cur_fan }} to {{ new_fan_speed }} due to temp diff {{ diff }}°C"
+
+        set start_wait = now()
+        
+        wait for setpoint_entity, or auto_entity change for 60 seconds
+    } else {
+        set start_wait = now()
+        
+        wait for setpoint_entity, or auto_entity change for 30 seconds
+    } 
+
+    set {
+        new_temperature_raw = state of indoor_temperature_entity
+        elapsed_time = now() - start_wait in seconds
+        temperature_change_per_minute = if elapsed_time > 5 then (new_temperature_raw - indoor_temp_raw) / (elapsed_time / 60) else -999
+    } 
 }
 
 ```
@@ -85,22 +111,36 @@ Description: Script to maintain the target temperature by adjusting fan speed ba
 
 Inputs:
  - evap_entity
- - at_target
+ - setpoint_temp
  - wet_bulb_temp
+ - indoor_temperature_entity
+ - indoor_humidity_entity
+ - at_target
+ - deadband_cooling_upper
+ - deadband_cooling_lower
+ - max_fan_speed_entity
+ - min_fan_speed_entity
+ - temperature_change_per_minute
  
 Target Fan Speed Algorithm:
- - If temperature difference is within at_target, keep current fan speed.
- - For the fan speed -1, 0, +1 calculate the feels like temperature factoring in wet bulb temperature and fan speed airflow.
- - Select the fan speed that results in the feels like temperature closest to the setpoint.
+   If temperature_change_per_minute != -999
+    If temperature difference is above deadband_upper * 2, increase fan speed by 1 (capped to max fan speed).
+    else if temperature difference is below deadband_lower * 2, decrease fan speed by 1 (capped to min fan speed).
+    else if temperature_change_per_minute < -0.25 (getting cooler) and diff < 0 (too cold), decrease fan speed by 1 (capped to min fan speed).
+    else if temperature_change_per_minute > 0.25 (getting warmer) and diff > 0 (too warm), increase fan speed by 1 (capped to max fan speed).
+   Else
+    - For the fan speed -1, +1 calculate the feels like temperature factoring in wet bulb temperature and fan speed airflow (speeds 1-10 linear effect when cool mode of 0-2 degrees airflow feels like when in fan_only mode, 0-4 degrees when in cool mode).
+    - Select the fan speed that results in the feels like temperature closest to the setpoint.
 
 ```
 set:
   air_temp = wet bulb temperature using outdoor_temp_entity, outdoor_humidity_entity
-  feels_like_temp = feels like algorithm using indoor_temp, indoor_humidity_entity
-  target_mode = if at_target
+  feels_like_temp = feels like algorithm using wet_bulb_temp, indoor_humidity_entity
+  diff = feels_like_temp - setpoint_temp
+  target_mode = if (not at_target and below setpoint_temp) then fan_only else cool
   target_speed = target_speed_algorithm
 
-call set_evap_target: target_mode = cool, target_speed = target_speed, evap_entity = evap_entity
+call set_evap_target: target_mode, target_speed, evap_entity, min_fan_speed_entity, max_fan_speed_entity
 ```
 
 ## Get to Target Temperature Script
@@ -118,6 +158,8 @@ Inputs:
 - outdoor_humidity_entity
 - indoor_temperature_entity
 - indoor_humidity_entity
+- max_fan_speed_entity
+- min_fan_speed_entity
 
 
 Target Fan Speed Algorithm:
@@ -134,7 +176,7 @@ set:
   target_minutes = max(3, 3-(diff * 0.5))
   target_speed = target_speed_algorithm
 
-call set_evap_target: target_mode = cool, target_speed = target_speed, evap_entity = evap_entity
+call set_evap_target: target_mode = cool, target_speed = target_speed, evap_entity = evap_entity, min_fan_speed_entity, max_fan_speed_entity
 ```
 
 ## Evap Pad Drying Script
@@ -144,7 +186,11 @@ Inputs:
 - pad_drying_entity: time sensor entity to track pad drying duration.
 - pad_dry_time_speed1: Optional. Minimum time in minutes to run fan_only for pad drying. Defaults to 10 minutes.
 - pad_dry_time_speed10: Optional. Minimum time in minutes to run fan_only for pad drying at speed 10. Defaults to 5 minutes.
-- pad_drying_previous: Timestamp of when pad drying started. If 0, drying has not started.
+- pad_drying_previous: Unix timestamp of when pad drying started. If 0, drying has not started.
+- setpoint_temp
+- indoor_temp
+- max_fan_speed_entity
+- min_fan_speed_entity
 
 ```
 if (pad_drying_entity >= 100%) {
@@ -156,9 +202,9 @@ if (pad_drying_entity >= 100%) {
 
 if (cur_mode != 'fan_only') {
     if (cur_mode == off) {
-        call set_evap_target: target_mode = fan_only, target_speed = 2, evap_entity = evap_entity
+        call set_evap_target: target_mode = fan_only, target_speed = 2, evap_entity = evap_entity, min_fan_speed_entity, max_fan_speed_entity
     } else {
-        call set_evap_target: target_mode = fan_only, target_speed = -1, evap_entity = evap_entity
+        call set_evap_target: target_mode = fan_only, target_speed = -1, evap_entity = evap_entity, min_fan_speed_entity, max_fan_speed_entity
     }
 }
 
@@ -166,11 +212,11 @@ if (pad_drying_previous == 0) {
     set pad_drying_entity to 0
 } else {
     calculate:
-        elapsed_time = now - pad_drying_previous
+        elapsed_minutes = (now() as seconds - pad_drying_previous) / 60
         current_fan_speed = current fan speed of evap_entity
-        equiv_elapsed = ((pad_dry_time_speed10 - pad_dry_time_speed1) / 10 * (current_fan_speed)) + pad_dry_time_speed1
-        percent_dried = (elapsed_time / (equiv_elapsed / 60)) * 100
-        new_percent_dried = min(100, percent_dried + pad_drying_entity state)
+        dry_time_minutes = pad_dry_time_speed1 + (current_fan_speed - 1) * (pad_dry_time_speed10 - pad_dry_time_speed1) / 9
+        percent_dried_delta = (elapsed_minutes / dry_time_minutes) * 100
+        new_percent_dried = min(100, percent_dried_delta + pad_drying_entity state)
     set pad_drying_entity to new_percent_dried
 }
 
@@ -180,7 +226,7 @@ calculate:
 if (lower_fan) {
     calculate target_speed = max(1, current_fan_speed - 1)
     if target_speed != current_fan_speed {
-        call set_evap_target: target_mode = fan_only, target_speed = target_speed, evap_entity = evap_entity
+        call set_evap_target: target_mode = fan_only, target_speed = target_speed, evap_entity = evap_entity, min_fan_speed_entity, max_fan_speed_entity
     }
 }
 ```
@@ -191,9 +237,10 @@ Inputs:
 - evap_entity: The evaporative cooler climate entity to control.
 - target_mode: Target HVAC mode (off, fan_only, cool).
 - target_speed: Target fan speed (1-5).
+- min_fan_speed_entity: Optional. Entity defining minimum fan speed (1-5). If not provided min fan speed is 1
+- max_fan_speed_entity: Optional. Entity defining maximum fan speed (1-5). If not provided max fan speed is 10
 
 ```
-
 set current_mode = current state of evap_entity
 set current_fan_speed = current fan speed of evap_entity
 
@@ -209,8 +256,28 @@ if (current_mode != target_mode) {
     wait on evap_entity to reach target_mode (15 seconds timeout)
 }
 
+set current_fan_speed = current fan speed of evap_entity
+if abs(target_speed - current_fan_speed) > 2 {
+    if (target_speed > current_fan_speed) {
+        target_speed = current_fan_speed + 2
+    } else {
+        target_speed = current_fan_speed - 2
+    }
+}
+
+if (min_fan_speed_entity is defined) {
+    set min_fan_speed = state of min_fan_speed_entity
+    target_speed = max(target_speed, min_fan_speed)
+}
+
+if (max_fan_speed_entity is defined) {
+    set max_fan_speed = state of max_fan_speed_entity
+    target_speed = min(target_speed, max_fan_speed)
+}
+
 while (target_speed > 0 and current_fan_speed != target_speed && repeat.index < 15) {
     set evap_entity fan speed to target_speed
     wait on evap_entity to reach target_speed (15 seconds timeout) - continue even if timeout, timeout after 2s
+    set current_fan_speed = current fan speed of evap_entity
 }
 ```
