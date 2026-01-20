@@ -1,0 +1,122 @@
+alias: evap_set_evap_target
+description: "Set evaporative cooler target mode and fan speed with safety constraints"
+mode: queued
+fields:
+  evap_entity:
+    description: Climate entity
+    example: climate.evap
+    required: true
+  target_mode:
+    description: Target HVAC mode (off, fan_only, cool)
+    example: cool
+    required: true
+  target_speed:
+    description: Target fan speed (1-10), or -1 to keep current speed
+    example: 5
+    required: true
+  min_fan_speed_entity:
+    description: Optional. Entity defining minimum fan speed (1-10)
+    example: input_number.min_fan_speed
+  max_fan_speed_entity:
+    description: Optional. Entity defining maximum fan speed (1-10)
+    example: input_number.max_fan_speed
+sequence:
+  - variables:
+      e: "{{ evap_entity }}"
+      current_mode: "{{ states(evap_entity) }}"
+      current_fan_speed: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+      desired_mode: "{{ target_mode }}"
+      desired_speed_raw: "{{ target_speed | int(-1) }}"
+  
+  # If target_speed is -1, keep current speed
+  - variables:
+      desired_speed_initial: "{{ current_fan_speed if desired_speed_raw == -1 else desired_speed_raw }}"
+  
+  # Handle mode transitions - if going to off from high speed, step down through fan_only first
+  - variables:
+      transition_mode: |-
+        {% if desired_mode == 'off' and current_fan_speed >= 2 %}
+          {% if current_mode != 'fan_only' %}
+            fan_only
+          {% else %}
+            {{ desired_mode }}
+          {% endif %}
+        {% else %}
+          {{ desired_mode }}
+        {% endif %}
+      transition_speed: |-
+        {% if desired_mode == 'off' and current_fan_speed >= 2 %}
+          {{ [2, current_fan_speed - 2] | max }}
+        {% else %}
+          {{ desired_speed_initial }}
+        {% endif %}
+  
+  # Set mode if different from current
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ current_mode != transition_mode }}"
+        sequence:
+          - action: climate.set_hvac_mode
+            continue_on_error: true
+            data:
+              entity_id: "{{ e }}"
+              hvac_mode: "{{ transition_mode }}"
+          - wait_template: "{{ states(e) == transition_mode }}"
+            timeout: "00:00:15"
+            continue_on_timeout: true
+  
+  # Update current state after mode change
+  - variables:
+      current_fan_speed_after_mode: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+      final_target_speed: "{{ transition_speed }}"
+  
+  # Apply max 2-step change constraint
+  - variables:
+      constrained_speed: |-
+        {% set diff = final_target_speed - current_fan_speed_after_mode %}
+        {% if diff | abs > 2 %}
+          {% if diff > 0 %}
+            {{ current_fan_speed_after_mode + 2 }}
+          {% else %}
+            {{ current_fan_speed_after_mode - 2 }}
+          {% endif %}
+        {% else %}
+          {{ final_target_speed }}
+        {% endif %}
+  
+  # Apply min/max fan speed constraints
+  - variables:
+      min_fan_speed: |-
+        {% if min_fan_speed_entity is defined and min_fan_speed_entity is not none %}
+          {{ states(min_fan_speed_entity) | int(1) }}
+        {% else %}
+          1
+        {% endif %}
+      max_fan_speed: |-
+        {% if max_fan_speed_entity is defined and max_fan_speed_entity is not none %}
+          {{ states(max_fan_speed_entity) | int(10) }}
+        {% else %}
+          10
+        {% endif %}
+      final_speed: "{{ [[min_fan_speed, constrained_speed] | max, max_fan_speed] | min }}"
+  
+  # Set fan speed if different from current and target_speed was not -1
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ final_speed > 0 and current_fan_speed_after_mode != final_speed and desired_speed_raw != -1 }}"
+        sequence:
+          - variables:
+              max_retries: 15  # Maximum attempts to set fan speed
+          - repeat:
+              while:
+                - condition: template
+                  value_template: "{{ state_attr(e, 'fan_mode') | int(1) != final_speed and repeat.index < max_retries }}"
+              sequence:
+                - action: climate.set_fan_mode
+                  continue_on_error: true
+                  data:
+                    entity_id: "{{ e }}"
+                    fan_mode: "{{ final_speed }}"
+                - delay: "00:00:02"

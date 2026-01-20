@@ -1,135 +1,192 @@
-# Home Assistant Evaporative Cooler Automation
+# Home Assistant Evaporative Cooler Automation (v4)
 
-This automation controls an evaporative cooler to maintain a target temperature, with robust handling for state transitions, fan speed, and snapshot restore.
+This automation controls an evaporative cooler to maintain a target temperature with improved performance, pad drying tracking, and intelligent mode switching between aggressive cooling and temperature maintenance.
 
-## Numbered Requirements
+## Key Features (v4)
 
-**R1. Restore state and exit if automatic control is off**  
-*If the automation is triggered but `input_boolean.automatic_control` is off, restore the previous state and stop further actions.*
+- **Dual-Mode Temperature Control**: Automatically switches between aggressive "get to target" cooling and gentle "maintain temperature" modes
+- **Pad Drying Management**: Tracks pad drying progress (0-100%) with configurable drying times based on fan speed
+- **Feels-Like Temperature**: Uses apparent temperature calculation accounting for humidity and fan speed airflow effects
+- **Adaptive Fan Control**: Fan speed adjusts based on temperature difference, wet bulb conditions, and temperature change rate
+- **Safe State Transitions**: Maximum 2-step fan speed changes with intelligent mode switching
+- **Snapshot/Restore**: Safely exits automation by restoring previous cooler state
 
-**R2. Take a snapshot of the evap state**  
-*On startup, save the current state of the cooler for later restoration.*
+## Control Modes
 
-**R3. Track how long temperature is below setpoint**  
-*Initialize and update a timer to measure how long the temperature has been below the setpoint.*
+### Get to Target Mode
+Used when temperature is significantly above setpoint (>1°C difference):
+- Aggressively cools to reach target temperature
+- Selects fan speed based on estimated time to reach target
+- Can increase fan speed by up to 2 steps per cycle
+- Uses feels-like temperature with wet bulb calculations
 
-**R4. Initialize main loop variables**  
-*Set up variables for temperature, setpoint, difference, need for cooling, HVAC state, fan speed, and maintain mode flag.*
+### Maintain Temperature Mode
+Used when temperature is within 1°C of setpoint:
+- Makes minimal fan speed adjustments (±1 step maximum)
+- Uses temperature change rate when available for smoother control
+- Compares feels-like temperature at adjacent fan speeds to find optimal setting
+- Prevents frequent cycling with intelligent thresholds
 
-**R5. If cooling is needed, ensure HVAC is in cool mode with wet bulb optimized fan speed**  
-*If the temperature is more than 0.3°C above setpoint, switch to cool mode and set fan speed optimized based on outdoor wet bulb temperature from sensor.*
-
-**R6. If cooling is not needed but HVAC is still in cool, switch to fan_only to dry pads (only if at fan speed 1)**  
-*If the system is cooling at fan speed 1 and temperature crosses below setpoint, switch to fan-only mode to allow evaporative pads to dry for a minimum of 5 minutes (unless temperature falls more than 1°C below target). Fan speed ramping is applied immediately upon entering fan_only mode. If fan speed is above 1, reduce to fan speed 1 and enter maintain mode instead.*
-
-**R7. Main persistent control loop**  
-*Continuously monitor temperature, setpoint, and control state, responding to changes as needed.*
-
-**R8. If auto turned off, restore snapshot and exit loop**  
-*If automatic control is turned off during the loop, restore the previous state and exit.*
-
-**R9. Track how long temperature is below setpoint**  
-*Update the timer for how long the temperature is below the setpoint.*
-
-**R10. Calculate how long we've been below setpoint (5m/10m thresholds)**  
-*Determine if the temperature has been below setpoint for 5 or 10 minutes to trigger further actions.*
-
-**R11. If off and need cooling, turn on with wet bulb optimized fan speed**  
-*If the system is off but cooling is needed, turn it on and set the fan speed optimized based on outdoor wet bulb temperature from sensor.*
-
-**R12. If in fan_only and need cooling, switch to cool with wet bulb optimized fan (respecting drying cycle)**  
-*If in fan-only mode but cooling is needed, switch to cool mode with fan speed calculated based on outdoor wet bulb temperature from sensor. However, if in a drying cycle (less than 5 minutes since entering fan_only and temperature has not fallen 1°C below target), remain in fan_only mode until drying conditions are met.*
-
-**R13. If below setpoint for 10m, turn off**  
-*If the temperature has been below setpoint for 10 minutes, turn the system off.*
-
-**R14. If below setpoint for 5m, intelligently transition based on fan speed**  
-*If the temperature has been below setpoint for 5 minutes: If fan speed is above 1, reduce to fan speed 1 and enter maintain mode. Only switch to fan-only mode for pad drying if already at fan speed 1 and temperature is still below setpoint.*
-
-**R15-R16. Adjust fan speed based on maintain mode**  
-*When in maintain mode (temperature at target), use the maintain temperature script to make minimal fan speed adjustments (±1 step max) based on temperature error threshold (0.2°C). When not in maintain mode (actively cooling), use aggressive fan speed adjustments with wet bulb calculation. Adjustments are prevented during the evaporative pad drying cycle.*
-
-**R17. If setpoint changed and now near target, adjust fan with wet bulb calculation**  
-*If the setpoint is changed and the temperature is now near the target, adjust the fan speed based on wet bulb temperature calculation.*
-
-**R18. Ramp down fan speed in fan_only mode**  
-*When in fan_only mode, gradually reduce the fan speed from the initial speed (when entering fan_only, capped at maximum of 6) to speed 1 over a configurable duration (default 5 minutes). Supports aggressive mode that completes ramp-down in 2 minutes when outdoor temperature exceeds setpoint by more than 2°C. This provides a smooth transition that continues the pad drying process while reducing energy consumption and noise.*
-
----
+### Pad Drying Mode
+Activated when cooling is no longer needed:
+- Tracks drying progress (0-100%) based on fan speed and elapsed time
+- Gradually lowers fan speed as pads dry
+- Configurable drying times (default: 10 minutes at speed 1, 5 minutes at speed 10)
+- Automatically turns off when 100% dry
 
 ## Design Rationale
 
-- **Snapshot/restore (R1, R2, R8):** Ensures user settings are preserved and system can safely exit automation.
-- **Persistent loop (R7):** Allows for robust, real-time response to environment and user changes.
-- **Maintain temperature mode (R15-R16):** When temperature reaches target (within 0.3°C), switches to maintain mode which uses minimal fan speed adjustments (±1 step maximum) with a temperature error threshold (0.2°C) to prevent frequent cycling. This provides stable, quiet operation while maintaining comfort.
-- **Wet bulb temperature sensor (sensor.viewbank_wet_bulb_temperature):** Pre-calculated wet bulb temperature using the Stull approximation from outdoor dry-bulb temperature and relative humidity. Used by both aggressive cooling and maintain temperature scripts for efficiency calculations.
-- **Intelligent fan_only transition (R6, R14):** Fan_only mode for pad drying is only activated when the system is at fan speed 1 and temperature is below setpoint. If fan speed is above 1, the system reduces to fan speed 1 and enters maintain mode instead, allowing the evaporative cooler to continue providing efficient cooling.
-- **Pad drying cycle (R6, R12, R18):** When at fan speed 1 and temperature crosses below setpoint, maintains fan_only mode for 5 minutes minimum to dry evaporative pads, preventing mold growth and extending pad lifespan. Early exit allowed if temperature falls >1°C below target. Fan speed ramping is applied immediately upon entering fan_only mode (including during startup), gradually reducing the fan speed from the initial speed (capped at 6) to speed 1 over a configurable duration (default 5 minutes, or 2 minutes in aggressive mode when outdoor temperature is >2°C above setpoint), providing energy savings and reduced noise while maintaining effective pad drying.
-- **Below setpoint timers (R3, R9, R10, R13, R14):** Prevents rapid cycling and allows for graceful transition to maintain mode or shutoff.
-- **Variable initialization (R4):** Ensures all logic operates on up-to-date, consistent state.
+- **Dual-Mode Operation**: Separate scripts for aggressive cooling (get_to_target) and maintenance provide optimal performance in each scenario
+- **Feels-Like Temperature**: More accurate comfort measurement by accounting for humidity and fan airflow effects (2-4°C cooling effect based on mode and fan speed)
+- **Pad Drying Progress Tracking**: Percentage-based tracking (0-100%) ensures pads are fully dried before shutdown, preventing mold and extending pad life
+- **Wet Bulb Temperature**: Calculated inline using Stull approximation for evaporative cooling efficiency
+- **Temperature Change Rate**: When available, uses temperature trend (°C/min) for predictive fan speed adjustments
+- **Safe State Transitions**: Maximum 2-step fan speed changes prevent mechanical stress and excessive noise
+- **Snapshot/Restore**: Preserves user settings and allows safe exit from automation
+- **No Indoor Humidity Estimation**: v4 removes complex indoor humidity estimation, relying on feels-like temperature calculations instead
 
 ## Required Entities
 
-The automation requires the following Home Assistant entities to be configured:
+The automation requires the following Home Assistant entities:
 
+### Core Entities
 - `climate.evap` - The evaporative cooler climate entity
-- `sensor.home_feels_like` - Indoor "feels like" temperature sensor (accounts for humidity and evaporative cooling effect)
 - `input_number.target_temperature` - Target temperature setpoint
 - `input_boolean.automatic_control` - Toggle for automatic control
-- `sensor.viewbank_temp` - Outdoor dry-bulb temperature sensor (example name - replace with your sensor)
-- `sensor.viewbank_humidity` - Outdoor relative humidity sensor (example name - replace with your sensor)
-- `sensor.viewbank_wet_bulb_temperature` - Wet bulb temperature sensor (created by sensor configuration file)
+- `input_number.pad_drying_progress` - Tracks pad drying progress (0-100%)
 
-**Note**: The outdoor sensor entity names (`sensor.viewbank_temp` and `sensor.viewbank_humidity`) are location-specific examples. Update the `outdoor_temp_entity` and `outdoor_rh_entity` variables in the automation to match your actual outdoor sensor entity IDs. The `sensor.viewbank_wet_bulb_temperature` sensor should be configured using the provided `sensor.viewbank_wet_bulb_temperature.yml` file.
+### Temperature & Humidity Sensors
+- `sensor.home_temperature` - Indoor temperature sensor
+- `sensor.viewbank_temp` - Outdoor dry-bulb temperature sensor
+- `sensor.viewbank_humidity` - Outdoor and indoor relative humidity sensor
 
-## Wet Bulb Temperature Sensor
+### Optional Entities
+- `input_number.min_fan_speed` - Minimum fan speed constraint (1-10)
+- `input_number.max_fan_speed` - Maximum fan speed constraint (1-10)
 
-The `sensor.viewbank_wet_bulb_temperature` is a template sensor that calculates the wet bulb temperature using the Stull approximation from outdoor dry-bulb temperature and relative humidity. This pre-calculated sensor is used by both the aggressive cooling script and the maintain temperature script for efficiency calculations. To configure this sensor, add the contents of `sensor.viewbank_wet_bulb_temperature.yml` to your Home Assistant configuration.
+**Note**: Replace `sensor.viewbank_temp` and `sensor.viewbank_humidity` with your actual outdoor sensor entity IDs. The automation calculates wet bulb temperature inline using the Stull approximation.
 
-## Temperature Control Modes
+### Creating Required Input Entities
 
-The automation operates in two distinct modes:
+Add these to your Home Assistant configuration:
 
-### Aggressive Cooling Mode
-Used when temperature is significantly above setpoint (>0.3°C). The `evap_apply_mode_and_fan_with_twb` script actively adjusts fan speed based on:
-- Temperature error (how far above setpoint)
-- Wet bulb temperature efficiency calculations
-- Can make large fan speed increases (up to 4 steps) when needed
+```yaml
+input_number:
+  target_temperature:
+    name: Target Temperature
+    min: 18
+    max: 28
+    step: 0.5
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer
+  
+  pad_drying_progress:
+    name: Pad Drying Progress
+    min: 0
+    max: 100
+    step: 0.1
+    unit_of_measurement: "%"
+    icon: mdi:water-percent
 
-### Maintain Temperature Mode
-Activated when temperature reaches target (within 0.3°C of setpoint). The `evap_maintain_temperature` script provides stable operation with:
-- Minimal fan speed changes (±1 step maximum)
-- Temperature error threshold (0.2°C) prevents frequent adjustments
-- Maintains consistent, quiet operation
-- Only changes fan speed when temperature error exceeds threshold
+input_boolean:
+  automatic_control:
+    name: Automatic Evap Control
+    icon: mdi:fan-auto
+```
 
-The system automatically switches between modes based on temperature error, providing aggressive cooling when needed and stable maintenance when at target.
+## Configuration
 
-## Wet Bulb Temperature Fan Control
+The automation can be customized through variables defined at the top of `evap-control.automation.yml`:
 
-The automation uses two scripts for fan speed control:
+```yaml
+variables:
+  # Core entities (required)
+  evap_entity: climate.evap
+  setpoint_entity: input_number.target_temperature
+  auto_entity: input_boolean.automatic_control
+  outdoor_temp_entity: sensor.viewbank_temp
+  outdoor_humidity_entity: sensor.viewbank_humidity
+  indoor_temperature_entity: sensor.home_temperature
+  indoor_humidity_entity: sensor.viewbank_humidity
+  pad_drying_entity: input_number.pad_drying_progress
+  
+  # Optional constraints
+  max_fan_speed_entity: null  # or input_number.max_fan_speed
+  min_fan_speed_entity: null  # or input_number.min_fan_speed
+  
+  # Tuning parameters
+  maintain_threshold: 1.0  # °C - switch to maintain mode within this range
+  pad_dry_time_speed1: 10  # minutes - drying time at fan speed 1
+  pad_dry_time_speed10: 5  # minutes - drying time at fan speed 10
+  deadband_cooling_upper: 0.3  # °C - start cooling above this
+  deadband_cooling_lower: 0.0  # °C - stop cooling below this
+```
 
-### evap_apply_mode_and_fan_with_twb (Aggressive Cooling)
-Used during initial cooling phase when temperature is significantly above setpoint. This script:
+### Tuning Parameters
 
-1. Uses wet bulb temperature from `sensor.viewbank_wet_bulb_temperature` (or calculates inline if sensor not provided)
-2. Determines the required saturation efficiency: η_req = (B - A_aim) / (B - Twb)
-   - B = outdoor dry-bulb temperature
-   - A_aim = target temperature + aim_offset (default 0.3°C)
-   - Twb = wet bulb temperature
-3. Maps efficiency to fan speed using a linear interpolation between η₁ (0.85 at fan speed 1) and η₁₀ (0.65 at fan speed 10)
-4. Applies necessity-based boost for large temperature errors
-5. Returns a fan speed between 1-10, or 10 if outdoor conditions are too humid (B - Twb < 1.0°C)
+- **maintain_threshold**: Temperature difference (°C) to switch from aggressive to maintain mode. Default: 1.0°C
+- **pad_dry_time_speed1/10**: Pad drying duration at minimum and maximum fan speeds. Times for intermediate speeds are interpolated linearly
+- **deadband_cooling_upper/lower**: Temperature deadband for cooling decisions. Creates hysteresis to prevent rapid cycling
 
-### evap_maintain_temperature (Maintain Mode)
-Used when temperature is at or near setpoint for stable operation. This script:
+## Scripts
 
-1. Uses wet bulb temperature from `sensor.viewbank_wet_bulb_temperature` for base calculations
-2. Only changes fan speed if temperature error exceeds threshold (default 0.2°C)
-3. Makes minimal adjustments (±1 fan speed step maximum)
-4. Maintains current fan speed when within acceptable temperature range
-5. Provides quiet, stable operation with minimal cycling
+The automation uses four scripts:
 
-This dual-mode approach ensures the evaporative cooler operates efficiently: aggressive cooling when needed, stable maintenance at target temperature.
+1. **evap_set_evap_target.script.yml**: Core helper script that safely changes HVAC mode and fan speed with constraints
+2. **evap_get_to_target_temperature.script.yml**: Aggressive cooling to reach target temperature quickly
+3. **evap_maintain_temperature.script.yml**: Gentle temperature maintenance with minimal fan speed changes  
+4. **evap_pad_drying.script.yml**: Manages pad drying cycle with progress tracking
 
-See inline comments in `evap-control.automation` for mapping of requirements to code.
+All scripts must be added to your Home Assistant scripts configuration.
+
+## v4 Improvements
+
+Version 4 brings significant improvements over v3:
+
+### Removed Features
+- **Indoor Humidity Estimation**: Removed complex and unreliable indoor humidity estimation logic
+- **Separate Wet Bulb Sensor**: No longer requires pre-configured wet bulb temperature sensor (calculated inline)
+- **Time-Based Pad Drying**: Replaced fixed 5-10 minute timers with percentage-based progress tracking
+
+### New Features
+- **Pad Drying Progress Entity**: Visual feedback on pad drying status (0-100%)
+- **Feels-Like Temperature**: Integrated apparent temperature calculation accounting for fan airflow
+- **Temperature Change Rate**: Uses temperature trend for predictive fan speed adjustments
+- **Consistent Fan Speed Goal**: Algorithm prioritizes stable fan speeds over rapid adjustments
+
+### Improved Algorithms
+- **Better Mode Switching**: Clear separation between get-to-target and maintain modes
+- **Smarter Fan Speed Selection**: Evaluates multiple fan speeds to find optimal setting
+- **Enhanced Safety Constraints**: Maximum 2-step fan speed changes prevent mechanical stress
+
+## Migration from v3
+
+If upgrading from v3:
+
+1. **Add new required entity**: Create `input_number.pad_drying_progress` (see configuration above)
+2. **Update automation**: Replace `evap-control.automation.yml` with v4 version
+3. **Update scripts**: Replace all script files with v4 versions
+4. **Optional sensors**: The `sensor.viewbank_wet_bulb_temperature` and `sensor.home_feels_like` are no longer required (calculations done inline)
+5. **Test thoroughly**: Monitor behavior for the first few cooling cycles
+
+Old v3 files are preserved with `.v3.yml` extension for reference.
+
+## Installation
+
+1. Copy all `.yml` files to your Home Assistant configuration directory
+2. Add input entities to `configuration.yaml` (see Required Entities section)
+3. Update entity names in automation variables to match your setup
+4. Reload automations and scripts in Home Assistant
+5. Enable automation by turning on `input_boolean.automatic_control`
+
+## Troubleshooting
+
+- **Automation not starting**: Check that all required entities exist and are available
+- **Rapid fan speed changes**: Increase `maintain_threshold` to widen the maintain mode range
+- **Pads not drying completely**: Increase `pad_dry_time_speed1` and `pad_dry_time_speed10` values
+- **Temperature overshoots target**: Adjust `deadband_cooling_upper` to start cooling earlier
+
+## Contributing
+
+See `IMPLEMENTATION.v4.md` for detailed specification and architecture documentation.
+
