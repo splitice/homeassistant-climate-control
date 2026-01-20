@@ -55,7 +55,7 @@ repeat while(auto_entity is on) {
         diff = indoor_feels_like_temp - setpoint_temp
         at_target = (diff <= deadband_cooling_upper and diff >= deadband_cooling_lower)
         should_maintain = (abs(diff) <= maintain_threshold)
-        needs_cooling = (diff > deadband_cooling_upper)
+        needs_cooling = not (diff < deadband_cooling_lower)
         cur_mode = current state of evap_entity
         cur_fan = current fan speed of evap_entity
         alg_state = "initial"

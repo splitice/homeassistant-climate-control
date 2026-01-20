@@ -101,7 +101,7 @@ sequence:
   # Determine target mode and speed
   - variables:
       target_mode: |-
-        {% if not is_at_target and diff < 0 %}
+        {% if not is_at_target and diff < -0.9 and current_fan_speed <= 2 %}
           fan_only
         {% else %}
           cool

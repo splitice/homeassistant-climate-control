@@ -120,7 +120,7 @@ actions:
             diff: "{{ indoor_feels_like_temp - setpoint_temp }}"
             at_target: "{{ diff <= deadband_cooling_upper and diff >= deadband_cooling_lower }}"
             should_maintain: "{{ (diff | abs) <= maintain_threshold }}"
-            needs_cooling: "{{ diff > deadband_cooling_upper }}"
+            needs_cooling: "{{ not (diff < maintain_threshold) }}"
         
         # Reset alg_state
         - variables:
@@ -130,7 +130,7 @@ actions:
         - choose:
             - conditions:
                 - condition: template
-                  value_template: "{{ needs_cooling }}"
+                  value_template: "{{ should_maintain or needs_cooling }}"
               sequence:
                 - variables:
                     pad_drying_enabled: false
