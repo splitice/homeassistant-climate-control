@@ -105,7 +105,7 @@ sequence:
             - ((RH_out - 1.676331) | atan)
             + (0.00391838 * RH_out ** 1.5 * ((0.023101 * RH_out) | atan))
             - 4.686035
-          ) %}
+          ) if RH_out > 0 else B %}
           
           {# Predict supply temperature from Twb + efficiency #}
           {# Ts = B - eta*(B - Twb) + heat_gain #}
@@ -116,7 +116,7 @@ sequence:
           {% set mix_coeff = mix_max * fan_frac %}
           {% set T_eff = T - mix_coeff * (T - Ts_pred) %}
           
-          {# Optional: humidity rises a bit in cool mode #}
+          {# Humidity boost in cool mode (this script always operates in cool mode) #}
           {% set RH_eff = RH + (rh_boost_max * fan_frac) %}
           {% set RH_eff = [0, [RH_eff, 100] | min] | max %}
           
