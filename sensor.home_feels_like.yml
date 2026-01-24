@@ -11,55 +11,116 @@ template:
             and states('sensor.viewbank_humidity') not in ['unknown','unavailable','none']
           }}
         state: >-
-          {% set T = states('sensor.home_temperature') | float %}
-          {% set RH = states('sensor.viewbank_humidity') | float %}
-
-          {% set hvac = states('climate.evap') %}
-          {% set fan_raw = state_attr('climate.evap','fan_mode') %}
+          {# -----------------------------
+          Inputs
+          ----------------------------- #}
+          {% set T_in = states('sensor.home_temperature') | float(default=nan) %}
+          {% set RH_in = states('sensor.viewbank_humidity') | float(default=nan) %}
+          {% set B = states('sensor.viewbank_temp') | float(default=nan) %}        {# outdoor dry-bulb #}
+          {% set RH_out = states('sensor.viewbank_humidity') | float(default=nan) %}
+          {% set mode = states('climate.evap') %}
+          {% set fan_raw = state_attr('climate.evap', 'fan_mode') %}
           {% set fan = fan_raw | int(0) %}
-
-          {# If evap is off/unknown/unavailable OR fan_mode is off/0/missing -> base feels-like only #}
-          {% set evap_inactive =
-              hvac in ['off','fan_only','unknown','unavailable','none','']
-              or fan_raw in [none, 'off', '0', 0]
-              or fan <= 0
-          %}
-
-          {# Base feels-like: Steadman apparent temperature with v=0 (no fan effect) #}
-          {% set es_base = 6.105 * (2.718281828 ** (17.27 * T / (237.7 + T))) %}
-          {% set e_base = (RH / 100.0) * es_base %}
-          {% set AT_base = T + 0.33 * e_base - 4.0 %}
-
-          {% if evap_inactive %}
-            {{ AT_base | round(1) }}
+          {# -----------------------------
+            Tunables (make these input_numbers later if you like)
+            ----------------------------- #}
+          {% set eta1 = 0.75 %}                 {# effective saturation efficiency @ fan 1 (more pessimistic than #}
+          {% set eta10 = 0.55 %}                {# effective saturation efficiency @ fan 10 #}
+                
+          {# Supply heat gain estimate from outdoor DB temp B (°C) #}
+          {% set gain_min = 0.2 %}     {# °C at/below T_low #}
+          {% set gain_max = 2.0 %}     {# °C at/above T_high #}
+          {% set T_low = 22.0 %}       {# below this, clamp to gain_min #}
+          {% set T_high = 40.0 %}      {# above this, clamp to gain_max #}
+          {# Anchor: 35C -> 1.5C #}
+          {% set T_anchor = 35.0 %}
+          {% set gain_anchor = 1.5 %}
+          {# Compute slope so that at T_anchor we hit gain_anchor, while still clamping at ends #}
+          {% set slope = (gain_anchor - gain_min) / (T_anchor - T_low) %}
+          {% if B is not number %}
+            {% set supply_heat_gain = gain_anchor %}
           {% else %}
-
-            {# Active: include air movement and (optionally) cool-mode adjustments #}
-            {% set fan = [1, [fan, 10] | min] | max %}
-            {% set fan_frac = (fan - 1) / 9 %}
-
-            {# Tune these two to suit your unit (only used when hvac == 'cool') #}
-            {% set cool_temp_drop_max = 3.0 %}   {# °C max drop at fan 10 #}
-            {% set cool_rh_boost_max = 12.0 %}   {# %RH max increase at fan 10 #}
-
-            {% set T_eff = T %}
-            {% set RH_eff = RH %}
-            {% if hvac == 'cool' %}
-              {% set T_eff = T - (cool_temp_drop_max * fan_frac) %}
-              {% set RH_eff = [0, [RH + (cool_rh_boost_max * fan_frac), 100] | min] | max %}
+            {% set raw = gain_min + slope * (B - T_low) %}
+            {% set supply_heat_gain = [gain_min, [raw, gain_max] | min] | max %}
+          {% endif %}
+          {% set mix_max = 0.55 %}              {# 0..1: how much supply temp can influence "effective" indoor tem #}
+          {% set rh_boost_max = 6.0 %}          {# %RH increase at fan 10 when cooling (optional, small) #}
+          {% set v_min = 0.10 %}
+          {% set v_max = 1.50 %}
+          {# -----------------------------
+            Handle inactive states
+            ----------------------------- #}
+          {% set evap_active =
+              (mode in ['cool','fan_only'])
+              and (fan_raw not in [none, 'off', '0', 0])
+              and (fan > 0)
+          %}
+          {# Base apparent temperature (no fan effect) #}
+          {% if T_in is not number or RH_in is not number %}
+            {{ T_in }}
+          {% else %}
+            {% set e_constant = 2.718281828 %}
+            {% set es0 = 6.105 * (e_constant ** (17.27 * T_in / (237.7 + T_in))) %}
+            {% set e0 = (RH_in / 100.0) * es0 %}
+            {% set AT_base = T_in + 0.33 * e0 - 4.0 %}
+            {% if not evap_active %}
+              {{ AT_base | round(1) }}
+            {% else %}
+              {# -----------------------------
+                Fan normalisation
+                ----------------------------- #}
+              {% set fan = [1, [fan, 10] | min] | max %}
+              {% set fan_frac = (fan - 1) / 9 %}
+              {# -----------------------------
+                Wet-bulb (Stull) with correct atan placement
+                ----------------------------- #}
+              {% set Twb =
+                (
+                  (B * ((0.151977 * (RH_out + 8.313659) ** 0.5) | atan))
+                  + ((B + RH_out) | atan)
+                  - ((RH_out - 1.676331) | atan)
+                  + (0.00391838 * RH_out ** 1.5 * ((0.023101 * RH_out) | atan))
+                  - 4.686035
+                )
+              if (B is number and RH_out is number and RH_out > 0)
+              else nan %}
+              {# If we can't compute Twb, fall back to old AT with airspeed only #}
+              {% if Twb is not number %}
+                {% set v = v_min + fan_frac * (v_max - v_min) %}
+                {% set es = 6.105 * (e_constant ** (17.27 * T_in / (237.7 + T_in))) %}
+                {% set e = (RH_in / 100.0) * es %}
+                {% set AT = T_in + 0.33 * e - 0.70 * v - 4.0 %}
+                {{ AT | round(1) }}
+              {% else %}
+                {# -----------------------------
+                  Predict supply temperature from Twb + efficiency
+                  Ts = B - eta*(B - Twb) + heat_gain
+                  eta interpolated fan1..fan10
+                  ----------------------------- #}
+                {% set eta = eta1 + (eta10 - eta1) * fan_frac %}
+                {% set Ts_pred = (B - eta * (B - Twb)) + supply_heat_gain %}
+                {# -----------------------------
+                  Mixing model: effective indoor temp shifts toward Ts_pred as fan increases
+                  mix_coeff 0..mix_max (fan dependent)
+                  ----------------------------- #}
+                {% set mix_coeff = mix_max * fan_frac %}
+                {% set T_eff = T_in - mix_coeff * (T_in - Ts_pred) %}
+                {# Optional: humidity rises a bit in cool mode (keep small)
+                  Use indoor RH as baseline; just nudge it a bit for comfort calculation.
+                #}
+                {% set RH_eff = RH_in %}
+                {% if mode == 'cool' %}
+                  {% set RH_eff = [0, [RH_in + (rh_boost_max * fan_frac), 100] | min] | max %}
+                {% endif %}
+                {# Airspeed term #}
+                {% set v = v_min + fan_frac * (v_max - v_min) %}
+                {# Steadman apparent temp using T_eff + RH_eff + v #}
+                {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
+                {% set e = (RH_eff / 100.0) * es %}
+                {% set AT = T_eff + 0.33 * e - 0.70 * v - 4.0 %}
+                {{ AT | round(1) }}
+              {% endif %}
             {% endif %}
-
-            {# Map fan 1..10 -> estimated air speed v (m/s) #}
-            {% set v_min = 0.10 %}
-            {% set v_max = 1.50 %}
-            {% set v = v_min + (fan - 1) * (v_max - v_min) / 9 %}
-
-            {# Steadman apparent temperature (°C) #}
-            {% set es = 6.105 * (2.718281828 ** (17.27 * T_eff / (237.7 + T_eff))) %}
-            {% set e = (RH_eff / 100.0) * es %}
-            {% set AT = T_eff + 0.33 * e - 0.70 * v - 4.0 %}
-
-            {{ AT | round(1) }}
           {% endif %}
         attributes:
           air_temp_c: "{{ states('sensor.home_temperature') | float(0) }}"
