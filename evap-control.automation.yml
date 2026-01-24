@@ -111,7 +111,26 @@ actions:
                 ----------------------------- #}
               {% set eta1 = 0.75 %}                 {# effective saturation efficiency @ fan 1 (more pessimistic than ideal) #}
               {% set eta10 = 0.55 %}                {# effective saturation efficiency @ fan 10 #}
-              {% set supply_heat_gain = 1.0 %}      {# °C added to predicted supply to account for duct/roof heat gain (your ~+1.1°C) #}
+              
+              {# Supply heat gain estimate from outdoor DB temp B (°C) #}
+              {% set gain_min = 0.2 %}     {# °C at/below T_low #}
+              {% set gain_max = 2.0 %}     {# °C at/above T_high #}
+              {% set T_low = 22.0 %}       {# below this, clamp to gain_min #}
+              {% set T_high = 40.0 %}      {# above this, clamp to gain_max #}
+
+              {# Anchor: 35C -> 1.5C #}
+              {% set T_anchor = 35.0 %}
+              {% set gain_anchor = 1.5 %}
+
+              {# Compute slope so that at T_anchor we hit gain_anchor, while still clamping at ends #}
+              {% set slope = (gain_anchor - gain_min) / (T_anchor - T_low) %}
+
+              {% if B is not number %}
+                {% set supply_heat_gain = gain_anchor %}
+              {% else %}
+                {% set raw = gain_min + slope * (B - T_low) %}
+                {% set supply_heat_gain = [gain_min, [raw, gain_max] | min] | max %}
+              {% endif %}
 
               {% set mix_max = 0.55 %}              {# 0..1: how much supply temp can influence "effective" indoor temp at fan 10 #}
               {% set rh_boost_max = 6.0 %}          {# %RH increase at fan 10 when cooling (optional, small) #}
