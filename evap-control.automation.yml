@@ -23,11 +23,13 @@ variables:
   pad_drying_entity: input_number.pad_drying_progress
   max_fan_speed_entity: null
   min_fan_speed_entity: null
-  maintain_threshold: 1.0
+  maintain_threshold_upper: 1.0
+  maintain_threshold_lower: -0.5
   pad_dry_time_speed1: 10
   pad_dry_time_speed10: 5
   deadband_cooling_upper: 0.3
   deadband_cooling_lower: 0.0
+  turning_off_start: null
 actions:
   # Exit if automatic control is off
   - choose:
@@ -39,22 +41,22 @@ actions:
               entity_id: scene.evap_restore
             action: scene.turn_on
           - stop: Automatic control is off; restored snapshot.
-  
+
   # Take snapshot of current evap state
   - data:
       scene_id: evap_restore
       snapshot_entities:
         - "{{ evap_entity }}"
     action: scene.create
-  
+
   # Initialize global variables
   - variables:
       pad_drying_previous: 0
-      temp_change_unavailable: -999  # Sentinel value indicating temperature change rate not available
+      temp_change_unavailable: -999 # Sentinel value indicating temperature change rate not available
       temperature_change_per_minute: -999
       pad_drying_enabled: false
       alg_state: "initial"
-  
+
   # Main control loop
   - repeat:
       while:
@@ -70,7 +72,7 @@ actions:
             indoor_rh: "{{ states(indoor_humidity_entity) | float(50) }}"
             cur_mode: "{{ states(evap_entity) }}"
             cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
-            
+
             # Calculate wet bulb temperature
             wet_bulb_temp: |-
               {% set B = states(outdoor_temp_entity) | float(30) %}
@@ -88,44 +90,131 @@ actions:
               {% else %}
                 {{ B }}
               {% endif %}
-            
+
             # Calculate indoor feels like temperature with current fan speed
             indoor_feels_like_temp: |-
-              {% set T = states(indoor_temperature_entity) | float(22) %}
-              {% set RH = states(indoor_humidity_entity) | float(50) %}
-              {% set fan = state_attr(evap_entity, 'fan_mode') | int(1) %}
+              {# -----------------------------
+                Inputs
+                ----------------------------- #}
+              {% set T_in = states(indoor_temperature_entity) | float(default=nan) %}
+              {% set RH_in = states(indoor_humidity_entity) | float(default=nan) %}
+
+              {% set B = states(outdoor_temp_entity) | float(default=nan) %}        {# outdoor dry-bulb #}
+              {% set RH_out = states(outdoor_humidity_entity) | float(default=nan) %}
+
               {% set mode = states(evap_entity) %}
-              {% set fan_frac = (fan - 1) / 9 %}
-              
-              {% if mode == 'cool' %}
-                {% set cool_temp_drop_max = 4.0 %}
-                {% set T_eff = T - (cool_temp_drop_max * fan_frac) %}
-              {% elif mode == 'fan_only' %}
-                {% set cool_temp_drop_max = 2.0 %}
-                {% set T_eff = T - (cool_temp_drop_max * fan_frac) %}
-              {% else %}
-                {% set T_eff = T %}
-              {% endif %}
-              
+              {% set fan_raw = state_attr(evap_entity, 'fan_mode') %}
+              {% set fan = fan_raw | int(0) %}
+
+              {# -----------------------------
+                Tunables (make these input_numbers later if you like)
+                ----------------------------- #}
+              {% set eta1 = 0.75 %}                 {# effective saturation efficiency @ fan 1 (more pessimistic than ideal) #}
+              {% set eta10 = 0.55 %}                {# effective saturation efficiency @ fan 10 #}
+              {% set supply_heat_gain = 1.0 %}      {# °C added to predicted supply to account for duct/roof heat gain (your ~+1.1°C) #}
+
+              {% set mix_max = 0.55 %}              {# 0..1: how much supply temp can influence "effective" indoor temp at fan 10 #}
+              {% set rh_boost_max = 6.0 %}          {# %RH increase at fan 10 when cooling (optional, small) #}
+
               {% set v_min = 0.10 %}
               {% set v_max = 1.50 %}
-              {% set v = v_min + (fan - 1) * (v_max - v_min) / 9 %}
-              {# Euler's number for saturation vapor pressure calculation #}
-              {% set e_constant = 2.71828 %}
-              {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
-              {% set e = (RH / 100.0) * es %}
-              {% set AT = T_eff + 0.33 * e - 0.70 * v - 4.0 %}
-              {{ AT }}
-            
+
+              {# -----------------------------
+                Handle inactive states
+                ----------------------------- #}
+              {% set evap_active =
+                  (mode in ['cool','fan_only'])
+                  and (fan_raw not in [none, 'off', '0', 0])
+                  and (fan > 0)
+              %}
+
+              {# Base apparent temperature (no fan effect) #}
+              {% if T_in is not number or RH_in is not number %}
+                {{ nan }}
+              {% else %}
+                {% set e_constant = 2.718281828 %}
+                {% set es0 = 6.105 * (e_constant ** (17.27 * T_in / (237.7 + T_in))) %}
+                {% set e0 = (RH_in / 100.0) * es0 %}
+                {% set AT_base = T_in + 0.33 * e0 - 4.0 %}
+
+                {% if not evap_active %}
+                  {{ AT_base | round(1) }}
+                {% else %}
+
+                  {# -----------------------------
+                    Fan normalisation
+                    ----------------------------- #}
+                  {% set fan = [1, [fan, 10] | min] | max %}
+                  {% set fan_frac = (fan - 1) / 9 %}
+
+                  {# -----------------------------
+                    Wet-bulb (Stull) with correct atan placement
+                    ----------------------------- #}
+                  {% set Twb =
+                    (
+                      (B * ((0.151977 * (RH_out + 8.313659) ** 0.5) | atan))
+                      + ((B + RH_out) | atan)
+                      - ((RH_out - 1.676331) | atan)
+                      + (0.00391838 * RH_out ** 1.5 * ((0.023101 * RH_out) | atan))
+                      - 4.686035
+                    )
+                  if (B is number and RH_out is number and RH_out > 0)
+                  else nan %}
+
+                  {# If we can't compute Twb, fall back to old AT with airspeed only #}
+                  {% if Twb is not number %}
+                    {% set v = v_min + fan_frac * (v_max - v_min) %}
+                    {% set es = 6.105 * (e_constant ** (17.27 * T_in / (237.7 + T_in))) %}
+                    {% set e = (RH_in / 100.0) * es %}
+                    {% set AT = T_in + 0.33 * e - 0.70 * v - 4.0 %}
+                    {{ AT | round(1) }}
+                  {% else %}
+
+                    {# -----------------------------
+                      Predict supply temperature from Twb + efficiency
+                      Ts = B - eta*(B - Twb) + heat_gain
+                      eta interpolated fan1..fan10
+                      ----------------------------- #}
+                    {% set eta = eta1 + (eta10 - eta1) * fan_frac %}
+                    {% set Ts_pred = (B - eta * (B - Twb)) + supply_heat_gain %}
+
+                    {# -----------------------------
+                      Mixing model: effective indoor temp shifts toward Ts_pred as fan increases
+                      mix_coeff 0..mix_max (fan dependent)
+                      ----------------------------- #}
+                    {% set mix_coeff = mix_max * fan_frac %}
+                    {% set T_eff = T_in - mix_coeff * (T_in - Ts_pred) %}
+
+                    {# Optional: humidity rises a bit in cool mode (keep small)
+                      Use indoor RH as baseline; just nudge it a bit for comfort calculation.
+                    #}
+                    {% set RH_eff = RH_in %}
+                    {% if mode == 'cool' %}
+                      {% set RH_eff = [0, [RH_in + (rh_boost_max * fan_frac), 100] | min] | max %}
+                    {% endif %}
+
+                    {# Airspeed term #}
+                    {% set v = v_min + fan_frac * (v_max - v_min) %}
+
+                    {# Steadman apparent temp using T_eff + RH_eff + v #}
+                    {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
+                    {% set e = (RH_eff / 100.0) * es %}
+                    {% set AT = T_eff + 0.33 * e - 0.70 * v - 4.0 %}
+
+                    {{ AT | round(1) }}
+                  {% endif %}
+                {% endif %}
+              {% endif %}
+
             diff: "{{ indoor_feels_like_temp - setpoint_temp }}"
             at_target: "{{ diff <= deadband_cooling_upper and diff >= deadband_cooling_lower }}"
-            should_maintain: "{{ (diff | abs) <= maintain_threshold }}"
-            needs_cooling: "{{ not (diff < maintain_threshold) }}"
-        
+            should_maintain: "{{ diff <= maintain_threshold_upper and diff >= maintain_threshold_lower }}"
+            needs_cooling: "{{ not (diff < maintain_threshold_upper) }}"
+
         # Reset alg_state
         - variables:
             alg_state: "initial"
-        
+
         # Handle cooling needs
         - choose:
             - conditions:
@@ -134,13 +223,14 @@ actions:
               sequence:
                 - variables:
                     pad_drying_enabled: false
+                    turning_off_start: null
                     alg_state: |-
                       {% if should_maintain %}
                         maintain
                       {% else %}
                         get_to_target
                       {% endif %}
-                
+
                 # Call appropriate script based on mode
                 - choose:
                     # Maintain temperature mode
@@ -176,7 +266,7 @@ actions:
                         indoor_humidity_entity: "{{ indoor_humidity_entity }}"
                         min_fan_speed_entity: "{{ min_fan_speed_entity }}"
                         max_fan_speed_entity: "{{ max_fan_speed_entity }}"
-            
+
             # Start pad drying if transitioning from cool mode
             - conditions:
                 - condition: template
@@ -185,13 +275,14 @@ actions:
                 - variables:
                     alg_state: "pad_drying_start"
                     pad_drying_enabled: true
-                
+                    turning_off_start: null
+
                 # Reset pad drying progress
                 - action: input_number.set_value
                   data:
                     entity_id: "{{ pad_drying_entity }}"
                     value: 0
-                
+
                 - action: script.evap_pad_drying
                   continue_on_error: true
                   data:
@@ -204,10 +295,10 @@ actions:
                     indoor_temp_entity: "{{ indoor_temperature_entity }}"
                     min_fan_speed_entity: "{{ min_fan_speed_entity }}"
                     max_fan_speed_entity: "{{ max_fan_speed_entity }}"
-                
+
                 - variables:
                     pad_drying_previous: "{{ as_timestamp(now()) | int }}"
-            
+
             # Continue pad drying if already in progress
             - conditions:
                 - condition: template
@@ -215,7 +306,8 @@ actions:
               sequence:
                 - variables:
                     alg_state: "pad_drying"
-                
+                    turning_off_start: null
+
                 - action: script.evap_pad_drying
                   continue_on_error: true
                   data:
@@ -228,15 +320,44 @@ actions:
                     indoor_temp_entity: "{{ indoor_temperature_entity }}"
                     min_fan_speed_entity: "{{ min_fan_speed_entity }}"
                     max_fan_speed_entity: "{{ max_fan_speed_entity }}"
-                
+
                 - variables:
                     pad_drying_previous: "{{ as_timestamp(now()) | int }}"
-        
+
+            # If current mode is fan, speed is 1, and not needing cooling, get ready to turn off
+            - conditions:
+                - condition: template
+                  value_template: "{{ cur_mode == 'fan_only' and cur_fan == 1 }}"
+              sequence:
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ turning_off_start is none }}"
+                      sequence:
+                        - variables:
+                            alg_state: "turning_off"
+                            turning_off_start: "{{ as_timestamp(now()) | int }}"
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ (as_timestamp(now()) - turning_off_start) | int >= 120 }}"
+                      sequence:
+                        - variables:
+                            alg_state: "turning_off"
+
+                        - action: script.evap_set_evap_target
+                          continue_on_error: true
+                          data:
+                            evap_entity: "{{ evap_entity }}"
+                            target_mode: "off"
+                            target_speed: -1
+                            min_fan_speed_entity: "{{ min_fan_speed_entity | default(none) }}"
+                            max_fan_speed_entity: "{{ max_fan_speed_entity | default(none) }}"
+
         # Record state after changes
         - variables:
             new_fan_speed: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
             new_fan_mode: "{{ states(evap_entity) }}"
-        
+
         # Log changes and wait
         - choose:
             - conditions:
@@ -249,11 +370,10 @@ actions:
                     message: >-
                       Evap control alg {{ alg_state }} adjusted mode from {{ cur_mode }} to {{ new_fan_mode }}, 
                       fan speed from {{ cur_fan }} to {{ new_fan_speed }} due to temp diff {{ diff | round(2) }}°C
-                
+
                 - variables:
                     start_wait: "{{ now() }}"
-                    
-                    
+
                 - wait_for_trigger:
                     - entity_id: input_number.target_temperature
                       id: setpoint_changed
@@ -267,7 +387,7 @@ actions:
           default:
             - variables:
                 start_wait: "{{ now() }}"
-            
+
             - wait_for_trigger:
                 - entity_id: input_number.target_temperature
                   id: setpoint_changed
@@ -278,13 +398,13 @@ actions:
                   trigger: state
               timeout: "00:00:30"
               continue_on_timeout: true
-        
+
         # Calculate temperature change rate
         - variables:
             new_temperature_raw: "{{ states(indoor_temperature_entity) | float(22) }}"
             elapsed_time: "{{ (as_timestamp(now()) - as_timestamp(start_wait)) | int }}"
-            min_elapsed_for_trend: 5  # Minimum seconds elapsed to calculate reliable trend
-            temp_change_unavailable: -999  # Sentinel value indicating temperature change rate not available
+            min_elapsed_for_trend: 5 # Minimum seconds elapsed to calculate reliable trend
+            temp_change_unavailable: -999 # Sentinel value indicating temperature change rate not available
             temperature_change_per_minute: |-
               {% set min_time = 5 %}
               {% set unavailable = -999 %}
