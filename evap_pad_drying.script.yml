@@ -43,7 +43,7 @@ sequence:
       dry_time_1: "{{ pad_dry_time_speed1 | default(10) | float }}"
       dry_time_10: "{{ pad_dry_time_speed10 | default(5) | float }}"
       setpoint_temp: "{{ states(setpoint_entity) | float(22) }}"
-      indoor_temp: "{{ states(indoor_temp_entity) | float(22) }}"
+      indoor_temp: "{{ states('sensor.home_feels_like') }}"
       pad_start_time: "{{ pad_drying_previous | int(0) }}"
   
   # If pad drying complete, turn off and exit
