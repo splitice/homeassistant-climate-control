@@ -71,6 +71,24 @@ sequence:
         {% set best_speed = 5 %}
         {% set best_time_error = 999 %}
         
+        {# Tunables matching sensor.home_feels_like #}
+        {% set eta1 = 0.75 %}
+        {% set eta10 = 0.55 %}
+        {% set gain_min = 0.2 %}
+        {% set gain_max = 2.0 %}
+        {% set T_low = 22.0 %}
+        {% set T_high = 40.0 %}
+        {% set T_anchor = 35.0 %}
+        {% set gain_anchor = 1.5 %}
+        {% set slope = (gain_anchor - gain_min) / (T_anchor - T_low) %}
+        {% set raw_gain = gain_min + slope * (outdoor_temp - T_low) %}
+        {% set supply_heat_gain = [gain_min, [raw_gain, gain_max] | min] | max %}
+        {% set mix_max = 0.55 %}
+        {% set rh_boost_max = 6.0 %}
+        {% set v_min = 0.10 %}
+        {% set v_max = 1.50 %}
+        {% set e_constant = 2.718281828 %}
+        
         {# Test each fan speed from 1-10 #}
         {% for test_speed in range(1, 11) %}
           {# Calculate feels like temperature at this fan speed in cool mode #}
@@ -78,20 +96,36 @@ sequence:
           {% set RH = indoor_rh %}
           {% set fan_frac = (test_speed - 1) / 9 %}
           
-          {# Cooling effect: higher fan = more cooling #}
-          {% set cool_temp_drop_max = 4.0 %}
-          {% set T_eff = T - (cool_temp_drop_max * fan_frac) %}
+          {# Calculate wet bulb temperature using Stull approximation #}
+          {% set B = outdoor_temp %}
+          {% set RH_out = outdoor_rh %}
+          {% set Twb = (
+            (B * ((0.151977 * (RH_out + 8.313659) ** 0.5) | atan))
+            + ((B + RH_out) | atan)
+            - ((RH_out - 1.676331) | atan)
+            + (0.00391838 * RH_out ** 1.5 * ((0.023101 * RH_out) | atan))
+            - 4.686035
+          ) if RH_out > 0 else B %}
+          
+          {# Predict supply temperature from Twb + efficiency #}
+          {# Ts = B - eta*(B - Twb) + heat_gain #}
+          {% set eta = eta1 + (eta10 - eta1) * fan_frac %}
+          {% set Ts_pred = (B - eta * (B - Twb)) + supply_heat_gain %}
+          
+          {# Mixing model: effective indoor temp shifts toward Ts_pred as fan increases #}
+          {% set mix_coeff = mix_max * fan_frac %}
+          {% set T_eff = T - mix_coeff * (T - Ts_pred) %}
+          
+          {# Humidity boost in cool mode (this script always operates in cool mode) #}
+          {% set RH_eff = RH + (rh_boost_max * fan_frac) %}
+          {% set RH_eff = [0, [RH_eff, 100] | min] | max %}
           
           {# Air velocity effect on feels like #}
-          {% set v_min = 0.10 %}
-          {% set v_max = 1.50 %}
-          {% set v = v_min + (test_speed - 1) * (v_max - v_min) / 9 %}
+          {% set v = v_min + fan_frac * (v_max - v_min) %}
           
           {# Calculate feels like temperature using Steadman apparent temperature formula #}
-          {# Euler's number for saturation vapor pressure calculation #}
-          {% set e_constant = 2.71828 %}
           {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
-          {% set e = (RH / 100.0) * es %}
+          {% set e = (RH_eff / 100.0) * es %}
           {% set AT = T_eff + 0.33 * e - 0.70 * v - 4.0 %}
           
           {# Estimate time to reach setpoint #}

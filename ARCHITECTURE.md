@@ -179,16 +179,28 @@ Main Automation Loop
 │                                                 │
 │  fan_fraction = (fan_speed - 1) / 9             │
 │                                                 │
-│  T_effective = T_indoor - (cooling_effect × fan_fraction) │
-│    cooling_effect = 4.0°C in cool mode          │
-│    cooling_effect = 2.0°C in fan_only mode      │
+│  1. Calculate Wet Bulb (Stull approximation):   │
+│     Twb from outdoor temp & RH                  │
 │                                                 │
-│  air_velocity = 0.10 + (fan_speed - 1) × 1.40 / 9  │
-│    range: 0.10 m/s (fan 1) to 1.50 m/s (fan 10) │
+│  2. Predict Supply Temperature:                 │
+│     eta = 0.75 + (0.55 - 0.75) × fan_frac      │
+│     supply_heat_gain = f(outdoor_temp)          │
+│     Ts = outdoor_temp - eta×(outdoor - Twb)     │
+│          + supply_heat_gain                     │
 │                                                 │
-│  Steadman Apparent Temperature:                 │
-│  AT = T_eff + 0.33×e - 0.70×v - 4.0             │
-│    where e = vapor pressure (from RH)           │
+│  3. Mixing Model:                               │
+│     mix_coeff = 0.55 × fan_frac                 │
+│     T_eff = T_indoor - mix_coeff×(T_in - Ts)   │
+│                                                 │
+│  4. Humidity Adjustment (cool mode):            │
+│     RH_eff = RH_indoor + 6.0 × fan_frac        │
+│                                                 │
+│  5. Air Velocity:                               │
+│     v = 0.10 + fan_frac × 1.40 m/s             │
+│                                                 │
+│  6. Steadman Apparent Temperature:              │
+│     AT = T_eff + 0.33×e - 0.70×v - 4.0         │
+│     where e = vapor pressure from RH_eff        │
 │                                                 │
 └─────────────────────────────────────────────────┘
 ```
