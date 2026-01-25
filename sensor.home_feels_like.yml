@@ -28,7 +28,7 @@ template:
           {% set eta10 = 0.55 %}                {# effective saturation efficiency @ fan 10 #}
                 
           {# Supply heat gain estimate from outdoor DB temp B (°C) #}
-          {% set gain_min = 0.2 %}     {# °C at/below T_low #}
+          {% set gain_min = 0 %}     {# °C at/below T_low #}
           {% set gain_max = 2.0 %}     {# °C at/above T_high #}
           {% set T_low = 22.0 %}       {# below this, clamp to gain_min #}
           {% set T_high = 40.0 %}      {# above this, clamp to gain_max #}
@@ -43,7 +43,7 @@ template:
             {% set raw = gain_min + slope * (B - T_low) %}
             {% set supply_heat_gain = [gain_min, [raw, gain_max] | min] | max %}
           {% endif %}
-          {% set mix_max = 0.55 %}              {# 0..1: how much supply temp can influence "effective" indoor tem #}
+          {% set mix_max = 0.8 %}              {# 0..1: how much supply temp can influence "effective" indoor tem #}
           {% set rh_boost_max = 6.0 %}          {# %RH increase at fan 10 when cooling (optional, small) #}
           {% set v_min = 0.10 %}
           {% set v_max = 1.50 %}
@@ -70,7 +70,10 @@ template:
                 Fan normalisation
                 ----------------------------- #}
               {% set fan = [1, [fan, 10] | min] | max %}
-              {% set fan_frac = (fan - 1) / 9 %}
+              {% set fan_frac = (fan - 1) / 11 %}
+              {% if fan > 0 %}
+                {% set fan_frac = fan_frac + 2/11 %}
+              {% endif %}
               {# -----------------------------
                 Wet-bulb (Stull) with correct atan placement
                 ----------------------------- #}

@@ -1,5 +1,5 @@
 alias: evap_maintain_temperature_v4
-description: "Maintain target temperature with minimal fan speed changes (v4)"
+description: Maintain target temperature with minimal fan speed changes (v4)
 mode: queued
 fields:
   evap_entity:
@@ -50,6 +50,7 @@ sequence:
   - variables:
       e: "{{ evap_entity }}"
       current_fan_speed: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+      current_mode: "{{ states(evap_entity) }}"
       setpoint: "{{ states(setpoint_entity) | float(22) }}"
       outdoor_temp: "{{ states(outdoor_temp_entity) | float(30) }}"
       outdoor_rh: "{{ states(outdoor_humidity_entity) | float(50) }}"
@@ -59,8 +60,6 @@ sequence:
       deadband_upper: "{{ deadband_cooling_upper | default(0.3) | float }}"
       deadband_lower: "{{ deadband_cooling_lower | default(0) | float }}"
       is_at_target: "{{ at_target }}"
-      
-      # Calculate wet bulb temperature using Stull approximation
       wet_bulb_temp: |-
         {% set B = outdoor_temp %}
         {% set RH = outdoor_rh %}
@@ -77,21 +76,17 @@ sequence:
         {% else %}
           {{ B }}
         {% endif %}
-  
-  # Calculate feels like temperature at current fan speed
       current_feels_like: "{{ states('sensor.home_feels_like') }}"
       diff: "{{ current_feels_like - setpoint }}"
-  
-  # Determine target mode and speed
   - variables:
       target_mode: |-
-        {% if not is_at_target and diff < -0.9 and current_fan_speed <= 2 %}
+        {% if not is_at_target and diff < -0.3 and current_fan_speed <= 2 %}
           fan_only
+        {% elif diff < 0 %}
+          {{ current_mode }}
         {% else %}
           cool
         {% endif %}
-      
-      # Target speed algorithm based on temperature change rate or feels like comparison
       target_speed: |-
         {% if temp_change_rate != -999 %}
           {# Use temperature change rate if available #}
@@ -142,8 +137,6 @@ sequence:
           
           {{ best_speed }}
         {% endif %}
-  
-  # Apply target mode and speed
   - action: script.evap_set_evap_target
     data:
       evap_entity: "{{ e }}"
