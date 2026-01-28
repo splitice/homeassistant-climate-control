@@ -25,7 +25,7 @@ template:
             Tunables (make these input_numbers later if you like)
             ----------------------------- #}
           {% set eta1 = 0.75 %}                 {# effective saturation efficiency @ fan 1 (more pessimistic than #}
-          {% set eta10 = 0.55 %}                {# effective saturation efficiency @ fan 10 #}
+          {% set eta10 = 0.5 %}                {# effective saturation efficiency @ fan 10 #}
                 
           {# Supply heat gain estimate from outdoor DB temp B (°C) #}
           {% set gain_min = 0 %}     {# °C at/below T_low #}
@@ -43,10 +43,11 @@ template:
             {% set raw = gain_min + slope * (B - T_low) %}
             {% set supply_heat_gain = [gain_min, [raw, gain_max] | min] | max %}
           {% endif %}
-          {% set mix_max = 0.8 %}              {# 0..1: how much supply temp can influence "effective" indoor tem #}
+          {% set mix_max = 0.55 %}              {# 0..1: how much supply temp can influence "effective" indoor tem #}
           {% set rh_boost_max = 6.0 %}          {# %RH increase at fan 10 when cooling (optional, small) #}
           {% set v_min = 0.10 %}
-          {% set v_max = 1.50 %}
+          {% set v_max = 5 %}
+          {% set e_constant = 2.718281828 %}
           {# -----------------------------
             Handle inactive states
             ----------------------------- #}
@@ -59,10 +60,9 @@ template:
           {% if T_in is not number or RH_in is not number %}
             {{ T_in }}
           {% else %}
-            {% set e_constant = 2.718281828 %}
             {% set es0 = 6.105 * (e_constant ** (17.27 * T_in / (237.7 + T_in))) %}
             {% set e0 = (RH_in / 100.0) * es0 %}
-            {% set AT_base = T_in + 0.33 * e0 - 4.0 %}
+            {% set AT_base = T_in + (0.33 * e0)  - 2 %}
             {% if not evap_active %}
               {{ AT_base | round(1) }}
             {% else %}

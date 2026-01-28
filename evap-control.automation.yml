@@ -73,24 +73,6 @@ actions:
             cur_mode: "{{ states(evap_entity) }}"
             cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
 
-            # Calculate wet bulb temperature
-            wet_bulb_temp: |-
-              {% set B = states(outdoor_temp_entity) | float(30) %}
-              {% set RH = states(outdoor_humidity_entity) | float(50) %}
-              {% if RH > 0 %}
-                {{
-                  (
-                    B * (0.151977 * (RH + 8.313659) ** 0.5) | atan
-                    + (B + RH) | atan
-                    - (RH - 1.676331) | atan
-                    + 0.00391838 * RH ** 1.5 * (0.023101 * RH) | atan
-                    - 4.686035
-                  )
-                }}
-              {% else %}
-                {{ B }}
-              {% endif %}
-
             # Calculate indoor feels like temperature with current fan speed
             indoor_feels_like_temp: "{{ states('sensor.home_feels_like') }}"
 
