@@ -78,7 +78,6 @@ sequence:
         {% endif %}
       current_feels_like: "{{ states('sensor.home_feels_like') }}"
       diff: "{{ current_feels_like - setpoint }}"
-  - variables:
       target_mode: |-
         {% if not is_at_target and diff < -0.3 and current_fan_speed <= 2 %}
           fan_only

@@ -14,7 +14,8 @@ template:
           {# -----------------------------
           Inputs
           ----------------------------- #}
-          {% set T_in = states('sensor.home_temperature') | float(default=nan) %}
+          {% set external_diff = states('sensor.home_differential_temperature') | float %}
+          {% set T_in = states('sensor.home_temperature') | float(default=nan) + (external_diff * 0.05) %}
           {% set RH_in = states('sensor.viewbank_humidity') | float(default=nan) %}
           {% set B = states('sensor.viewbank_temp') | float(default=nan) %}        {# outdoor dry-bulb #}
           {% set RH_out = states('sensor.viewbank_humidity') | float(default=nan) %}
@@ -28,9 +29,9 @@ template:
           {% set eta10 = 0.5 %}                {# effective saturation efficiency @ fan 10 #}
                 
           {# Supply heat gain estimate from outdoor DB temp B (°C) #}
-          {% set gain_min = 0 %}     {# °C at/below T_low #}
+          {% set gain_min = 0 %}       {# °C at/below T_low #}
           {% set gain_max = 2.0 %}     {# °C at/above T_high #}
-          {% set T_low = 22.0 %}       {# below this, clamp to gain_min #}
+          {% set T_low = 23.0 %}       {# below this, clamp to gain_min #}
           {% set T_high = 40.0 %}      {# above this, clamp to gain_max #}
           {# Anchor: 35C -> 1.5C #}
           {% set T_anchor = 35.0 %}
@@ -45,8 +46,8 @@ template:
           {% endif %}
           {% set mix_max = 0.55 %}              {# 0..1: how much supply temp can influence "effective" indoor tem #}
           {% set rh_boost_max = 6.0 %}          {# %RH increase at fan 10 when cooling (optional, small) #}
-          {% set v_min = 0.10 %}
-          {% set v_max = 5 %}
+          {% set v_min = 0.5 %}
+          {% set v_max = 4 %}
           {% set e_constant = 2.718281828 %}
           {# -----------------------------
             Handle inactive states
@@ -62,9 +63,9 @@ template:
           {% else %}
             {% set es0 = 6.105 * (e_constant ** (17.27 * T_in / (237.7 + T_in))) %}
             {% set e0 = (RH_in / 100.0) * es0 %}
-            {% set AT_base = T_in + (0.33 * e0)  - 2 %}
+            {% set AT_base = T_in + (0.3 * e0)  - 2 %}
             {% if not evap_active %}
-              {{ AT_base | round(1) }}
+              {{ (AT_base - 2) | round(1) }}
             {% else %}
               {# -----------------------------
                 Fan normalisation
@@ -92,7 +93,7 @@ template:
                 {% set v = v_min + fan_frac * (v_max - v_min) %}
                 {% set es = 6.105 * (e_constant ** (17.27 * T_in / (237.7 + T_in))) %}
                 {% set e = (RH_in / 100.0) * es %}
-                {% set AT = T_in + 0.33 * e - 0.70 * v - 4.0 %}
+                {% set AT = T_in + 0.3 * e - 0.80 * v - 4.0 %}
                 {{ AT | round(1) }}
               {% else %}
                 {# -----------------------------
@@ -120,7 +121,7 @@ template:
                 {# Steadman apparent temp using T_eff + RH_eff + v #}
                 {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
                 {% set e = (RH_eff / 100.0) * es %}
-                {% set AT = T_eff + 0.33 * e - 0.70 * v - 4.0 %}
+                {% set AT = T_eff + 0.3 * e - 0.80 * v - 4.0 %}
                 {{ AT | round(1) }}
               {% endif %}
             {% endif %}
