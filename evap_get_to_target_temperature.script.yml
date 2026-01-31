@@ -61,7 +61,7 @@ sequence:
           {{ B }}
         {% endif %}
       
-      diff: "{{ indoor_temp - setpoint }}"
+      diff: "{{ current_feels_like - setpoint }}"
       
       # Calculate target_minutes: max(3, 3-(diff * 0.5))
       target_minutes: "{{ [3, 3 - (diff * 0.5)] | max }}"
@@ -77,7 +77,7 @@ sequence:
         {% set best_minutes = 999 %}
   
         {# Inputs (expected provided by your script context) #}
-        {% set T_in = indoor_temp | float(default=nan) %}
+        {% set T_in = current_feels_like | float(default=nan) %}
         {% set A = setpoint | float(default=nan) %}
         {% set B = outdoor_temp | float(default=nan) %}
         {% set RH_out = outdoor_rh | float(default=nan) %}
@@ -135,13 +135,13 @@ sequence:
               {# Predicted supply temp at this fan (roof heat gain included) #}
               {% set Ts = (B - eta * (B - Twb)) + supply_heat_gain %}
   
-              {# Driving delta: indoor above supply #}
+              {# Driving delta: indoor feels like above supply #}
               {% set dT = T_in - Ts %}
   
               {# Fan-dependent time constant (linear interpolation) #}
               {% set tau = tau_1 + (tau_10 - tau_1) * fan_frac %}
   
-              {# First-order time to reach setpoint:
+              {# First-order time to reach setpoint (using feels like temp):
                 T(t) = Ts + (T_in - Ts)*exp(-t/tau)
                 => t = -tau * ln((A - Ts)/(T_in - Ts))
               #}
