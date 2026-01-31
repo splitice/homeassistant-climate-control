@@ -61,9 +61,18 @@ template:
           {% if T_in is not number or RH_in is not number %}
             {{ T_in }}
           {% else %}
+            {% set RH0 = 60.0 %}
+            {% set k = 0.4 %}
+            
             {% set es0 = 6.105 * (e_constant ** (17.27 * T_in / (237.7 + T_in))) %}
-            {% set e0 = (RH_in / 100.0) * es0 %}
-            {% set AT_base = T_in + (0.3 * e0)  - 2 %}
+            
+            {% set rh0 = RH_in | float %}
+            {% set rh_lin0 = (rh0 / 100.0) %}
+            {% set rh_extra0 = ((max(0.0, rh0 - RH0) / (100.0 - RH0)) ** 2) %}
+            
+            {% set e0 = es0 * (rh_lin0 + k * rh_extra0) %}
+            
+            {% set AT_base = T_in + (0.3 * e0) - 2 %}
             {% if not evap_active %}
               {{ (AT_base - 2) | round(1) }}
             {% else %}
@@ -91,9 +100,17 @@ template:
               {# If we can't compute Twb, fall back to old AT with airspeed only #}
               {% if Twb is not number %}
                 {% set v = v_min + fan_frac * (v_max - v_min) %}
-                {% set es = 6.105 * (e_constant ** (17.27 * T_in / (237.7 + T_in))) %}
-                {% set e = (RH_in / 100.0) * es %}
-                {% set AT = T_in + 0.3 * e - 0.80 * v - 4.0 %}
+                {% set RH0 = 60.0 %}
+                {% set k = 0.4 %}          {# how hard it ramps after RH0 #}
+                
+                {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
+                
+                {% set rh = RH_eff | float %}
+                {% set rh_lin = (rh / 100.0) %}
+                {% set rh_extra = ((max(0.0, rh - RH0) / (100.0 - RH0)) ** 2) %}   {# quadratic ramp #}
+                
+                {% set e = es * ( rh_lin + k * rh_extra ) %}
+                {% set AT = T_eff + 0.3 * e - 0.80 * v - 4.0 %}
                 {{ AT | round(1) }}
               {% else %}
                 {# -----------------------------
@@ -119,8 +136,16 @@ template:
                 {# Airspeed term #}
                 {% set v = v_min + fan_frac * (v_max - v_min) %}
                 {# Steadman apparent temp using T_eff + RH_eff + v #}
+                {% set RH0 = 60.0 %}
+                {% set k = 0.4 %}          {# how hard it ramps after RH0 #}
+                
                 {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
-                {% set e = (RH_eff / 100.0) * es %}
+                
+                {% set rh = RH_eff | float %}
+                {% set rh_lin = (rh / 100.0) %}
+                {% set rh_extra = ((max(0.0, rh - RH0) / (100.0 - RH0)) ** 2) %}   {# quadratic ramp #}
+                
+                {% set e = es * ( rh_lin + k * rh_extra ) %}
                 {% set AT = T_eff + 0.3 * e - 0.80 * v - 4.0 %}
                 {{ AT | round(1) }}
               {% endif %}
