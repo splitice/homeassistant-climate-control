@@ -124,7 +124,13 @@ sequence:
             {# Euler's number for saturation vapor pressure calculation #}
             {% set e_constant = 2.71828 %}
             {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
-            {% set e = (RH / 100.0) * es %}
+            {# Quadratic RH scaling above threshold #}
+            {% set RH0 = 60.0 %}
+            {% set k = 0.4 %}
+            {% set rh = RH | float %}
+            {% set rh_lin = (rh / 100.0) %}
+            {% set rh_extra = ((max(0.0, rh - RH0) / (100.0 - RH0)) ** 2) %}
+            {% set e = es * (rh_lin + k * rh_extra) %}
             {% set AT = T_eff + 0.33 * e - 0.70 * v - 4.0 %}
             {% set error = (AT - setpoint) | abs %}
             
