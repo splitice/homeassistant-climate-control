@@ -68,7 +68,7 @@ sequence:
       target_mode: |-
         {# Switch to fan_only if indoor temp is at/near setpoint but feels like is high due to RH #}
         {% set temp_at_target = (indoor_temp - setpoint) < 0.5 %}
-        {% if temp_at_target and current_feels_like > setpoint %}
+        {% if temp_at_target and current_feels_like > setpoint and (outdoor_temp - 1) < indoor_temp %}
           fan_only
         {% else %}
           cool
@@ -105,7 +105,7 @@ sequence:
         {% set v_min = 0.5 %}
         {% set v_max = 4.0 %}
         {% set RH0 = 60.0 %}
-        {% set k = 0.4 %}
+        {% set k = 0.1 %}
         {% set e_constant = 2.718281828 %}
   
         {# If missing inputs, fall back to push hard #}

@@ -62,7 +62,7 @@ template:
             {{ T_in }}
           {% else %}
             {% set RH0 = 60.0 %}
-            {% set k = 0.4 %}
+            {% set k = 0.1 %}
             
             {% set es0 = 6.105 * (e_constant ** (17.27 * T_in / (237.7 + T_in))) %}
             
@@ -101,7 +101,7 @@ template:
               {% if Twb is not number %}
                 {% set v = v_min + fan_frac * (v_max - v_min) %}
                 {% set RH0 = 60.0 %}
-                {% set k = 0.4 %}          {# how hard it ramps after RH0 #}
+                {% set k = 0.1 %}          {# how hard it ramps after RH0 #}
                 
                 {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
                 
@@ -137,7 +137,7 @@ template:
                 {% set v = v_min + fan_frac * (v_max - v_min) %}
                 {# Steadman apparent temp using T_eff + RH_eff + v #}
                 {% set RH0 = 60.0 %}
-                {% set k = 0.4 %}          {# how hard it ramps after RH0 #}
+                {% set k = 0.1 %}          {# how hard it ramps after RH0 #}
                 
                 {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
                 

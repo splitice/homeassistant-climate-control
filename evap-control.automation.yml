@@ -29,6 +29,7 @@ variables:
   pad_dry_time_speed10: 5
   deadband_cooling_upper: 0.3
   deadband_cooling_lower: 0.0
+  pad_drying_necessary: false
   turning_off_start: null
 actions:
   # Exit if automatic control is off
@@ -129,7 +130,7 @@ actions:
                             min_fan_speed_entity: "{{ min_fan_speed_entity }}"
                             max_fan_speed_entity: "{{ max_fan_speed_entity }}"
                             temperature_change_per_minute: "{{ temperature_change_per_minute }}"
-                            allowed_cool: "{{ allowed_cool_mode || bool }}"
+                            allowed_cool: "{{ allowed_cool_mode | bool }}"
                   # Get to target mode
                   default:
                     - action: script.evap_get_to_target_temperature
@@ -147,7 +148,7 @@ actions:
             # Start pad drying if transitioning from cool mode
             - conditions:
                 - condition: template
-                  value_template: "{{ cur_mode == 'cool' }}"
+                  value_template: "{{ pad_drying_necessary and not pad_drying_enabled }}"
               sequence:
                 - variables:
                     alg_state: "pad_drying_start"
@@ -204,7 +205,7 @@ actions:
             # If current mode is fan, speed is 1, and not needing cooling, get ready to turn off
             - conditions:
                 - condition: template
-                  value_template: "{{ cur_mode == 'fan_only' and cur_fan == 1 }}"
+                  value_template: "{{ not pad_drying_necessary and cur_mode == 'fan_only' and cur_fan == 1 and diff < maintain_threshold_lower }}"
               sequence:
                 - choose:
                     - conditions:
@@ -229,11 +230,39 @@ actions:
                             target_speed: -1
                             min_fan_speed_entity: "{{ min_fan_speed_entity | default(none) }}"
                             max_fan_speed_entity: "{{ max_fan_speed_entity | default(none) }}"
+            - conditions:
+                - condition: template
+                  value_template: "{{ cur_mode == 'fan_only' }}"
+              sequence:
+                - variables:
+                    alg_state: "reduce_fan"
+                - action: script.evap_maintain_temperature_v4
+                  continue_on_error: true
+                  data:
+                    evap_entity: "{{ evap_entity }}"
+                    setpoint_entity: "{{ setpoint_entity }}"
+                    outdoor_temp_entity: "{{ outdoor_temp_entity }}"
+                    outdoor_humidity_entity: "{{ outdoor_humidity_entity }}"
+                    indoor_temperature_entity: "{{ indoor_temperature_entity }}"
+                    indoor_humidity_entity: "{{ indoor_humidity_entity }}"
+                    at_target: "{{ at_target }}"
+                    deadband_cooling_upper: "{{ deadband_cooling_upper }}"
+                    deadband_cooling_lower: "{{ deadband_cooling_lower }}"
+                    min_fan_speed_entity: "{{ min_fan_speed_entity }}"
+                    max_fan_speed_entity: "{{ max_fan_speed_entity }}"
+                    temperature_change_per_minute: "{{ temperature_change_per_minute }}"
+                    allowed_cool: false
 
         # Record state after changes
         - variables:
             new_fan_speed: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
             new_fan_mode: "{{ states(evap_entity) }}"
+            pad_drying_necessary: |-
+              {% if pad_drying_necessary or states(evap_entity) == "cool" %}
+                true
+              {% else %}
+                false
+              {% endif %}
 
         # Log changes and wait
         - choose:
