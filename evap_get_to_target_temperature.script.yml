@@ -146,7 +146,8 @@ sequence:
   
             {# Test fan speeds from 1..10 #}
             {% for test_speed in range(1, 11) %}
-              {# Fan normalization (match sensor logic) #}
+              {# Fan normalization (match sensor logic exactly) #}
+              {# This produces fan_frac in range ~0.18 to ~1.0 for fans 1-10 #}
               {% set fan = [1, [test_speed, 10] | min] | max %}
               {% set fan_frac = (fan - 1) / 11 %}
               {% if fan > 0 %}
@@ -174,7 +175,7 @@ sequence:
               {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
               {% set rh = RH_eff | float %}
               {% set rh_lin = (rh / 100.0) %}
-              {% set rh_extra = ((max(0.0, rh - RH0) / (100.0 - RH0)) ** 2) %}
+              {% set rh_extra = (([0.0, rh - RH0] | max / (100.0 - RH0)) ** 2) %}
               {% set e = es * (rh_lin + k * rh_extra) %}
               {% set predicted_FL = T_eff + 0.3 * e - 0.80 * v - 4.0 %}
   
