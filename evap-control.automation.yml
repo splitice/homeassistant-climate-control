@@ -100,6 +100,12 @@ actions:
                       {% else %}
                         get_to_target
                       {% endif %}
+                    allowed_cool_mode: |-
+                      {% if indoor_rh > 65 %}
+                        false
+                      {% else %}
+                        true
+                      {% endif %}
 
                 # Call appropriate script based on mode
                 - choose:
@@ -123,6 +129,7 @@ actions:
                             min_fan_speed_entity: "{{ min_fan_speed_entity }}"
                             max_fan_speed_entity: "{{ max_fan_speed_entity }}"
                             temperature_change_per_minute: "{{ temperature_change_per_minute }}"
+                            allowed_cool: "{{ allowed_cool_mode || bool }}"
                   # Get to target mode
                   default:
                     - action: script.evap_get_to_target_temperature

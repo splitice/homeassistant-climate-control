@@ -46,6 +46,10 @@ fields:
     description: Temperature change rate (°C/min), -999 if not available
     example: -0.5
     required: true
+  allowed_cool:
+    description: Boolean indicating if cooling mode is allowed
+    example: true
+    required: true
 sequence:
   - variables:
       e: "{{ evap_entity }}"
@@ -83,8 +87,10 @@ sequence:
           fan_only
         {% elif diff < 0 %}
           {{ current_mode }}
-        {% else %}
+        {% elif allowed_cool %}
           cool
+        {% else %}
+          fan_only
         {% endif %}
       target_speed: |-
         {% if temp_change_rate != -999 %}
