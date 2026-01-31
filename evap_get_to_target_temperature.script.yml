@@ -41,7 +41,7 @@ sequence:
       outdoor_rh: "{{ states(outdoor_humidity_entity) | float(50) }}"
       indoor_temp: "{{ states(indoor_temperature_entity) | float(22) }}"
       indoor_rh: "{{ states(indoor_humidity_entity) | float(50) }}"
-      current_feels_like: "{{ states('sensor.home_feels_like') }}"
+      current_feels_like: "{{ states('sensor.home_feels_like') | float(default=nan) }}"
       
       # Calculate wet bulb temperature using Stull approximation
       wet_bulb_temp: |-
@@ -67,7 +67,7 @@ sequence:
       target_minutes: "{{ [3, 3 - (diff * 0.5)] | max }}"
       target_mode: |-
         {# Switch to fan_only if indoor temp is at/near setpoint but feels like is high due to RH #}
-        {% set temp_at_target = (indoor_temp - setpoint) | abs < 0.5 %}
+        {% set temp_at_target = (indoor_temp - setpoint) < 0.5 %}
         {% if temp_at_target and current_feels_like > setpoint %}
           fan_only
         {% else %}
