@@ -152,7 +152,7 @@ actions:
             # Start pad drying if transitioning from cool mode
             - conditions:
                 - condition: template
-                  value_template: "{{ pad_drying_necessary and not pad_drying_enabled }}"
+                  value_template: "{{ pad_drying_necessary | bool and not pad_drying_enabled }}"
               sequence:
                 - variables:
                     alg_state: "pad_drying_start"
@@ -211,7 +211,7 @@ actions:
             # If current mode is fan, speed is 1, and not needing cooling, get ready to turn off
             - conditions:
                 - condition: template
-                  value_template: "{{ not pad_drying_necessary and cur_mode == 'fan_only' and cur_fan == 1 and diff < maintain_threshold_lower }}"
+                  value_template: "{{ not pad_drying_necessary | bool and cur_mode == 'fan_only' and cur_fan == 1 and diff < maintain_threshold_lower }}"
               sequence:
                 - choose:
                     - conditions:
@@ -266,7 +266,7 @@ actions:
             new_fan_speed: "{{ states(fan_speed_entity) | int(1) }}"
             new_fan_mode: "{{ states(evap_entity) }}"
             pad_drying_necessary: |-
-              {% if pad_drying_necessary or states(evap_entity) == "cool" %}
+              {% if (pad_drying_necessary | bool) or (states(evap_entity) == "cool") %}
                 true
               {% else %}
                 false
