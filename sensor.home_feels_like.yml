@@ -21,7 +21,7 @@ template:
           {% set RH_out = states('sensor.viewbank_humidity') | float(default=nan) %}
           {% set mode = states('select.roofevap1_e90248_evap_mode') %}
           {% set fan_raw = states('select.roofevap1_e90248_evap_fan_speed') %}
-          {% set fan = fan_raw | int(0) %}
+          {% set fan = fan_raw | int(1) %}
           {# -----------------------------
             Tunables (make these input_numbers later if you like)
             ----------------------------- #}
