@@ -1,5 +1,5 @@
-alias: evap_maintain_temperature_v4
-description: Maintain target temperature with minimal fan speed changes (v4)
+alias: evap_get_to_target_temperature
+description: "Aggressively cool to reach target temperature (v4)"
 mode: queued
 fields:
   evap_entity:
@@ -26,40 +26,24 @@ fields:
     description: Indoor RH sensor (%)
     example: sensor.home_humidity
     required: true
-  at_target:
-    description: Boolean indicating if current temperature is within deadband
-    example: true
-    required: true
-  deadband_cooling_upper:
-    description: Upper deadband (°C) for cooling decisions
-    example: 0.3
-  deadband_cooling_lower:
-    description: Lower deadband (°C) for cooling decisions
-    example: 0
   min_fan_speed_entity:
     description: Optional. Entity defining minimum fan speed (1-10)
     example: input_number.min_fan_speed
   max_fan_speed_entity:
     description: Optional. Entity defining maximum fan speed (1-10)
     example: input_number.max_fan_speed
-  temperature_change_per_minute:
-    description: Temperature change rate (°C/min), -999 if not available
-    example: -0.5
-    required: true
 sequence:
   - variables:
       e: "{{ evap_entity }}"
       current_fan_speed: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
-      current_mode: "{{ states(evap_entity) }}"
       setpoint: "{{ states(setpoint_entity) | float(22) }}"
       outdoor_temp: "{{ states(outdoor_temp_entity) | float(30) }}"
       outdoor_rh: "{{ states(outdoor_humidity_entity) | float(50) }}"
       indoor_temp: "{{ states(indoor_temperature_entity) | float(22) }}"
       indoor_rh: "{{ states(indoor_humidity_entity) | float(50) }}"
-      temp_change_rate: "{{ temperature_change_per_minute | float(-999) }}"
-      deadband_upper: "{{ deadband_cooling_upper | default(0.3) | float }}"
-      deadband_lower: "{{ deadband_cooling_lower | default(0) | float }}"
-      is_at_target: "{{ at_target }}"
+      current_feels_like: "{{ states('sensor.home_feels_like') | float(default=nan) }}"
+      
+      # Calculate wet bulb temperature using Stull approximation
       wet_bulb_temp: |-
         {% set B = outdoor_temp %}
         {% set RH = outdoor_rh %}
@@ -76,66 +60,181 @@ sequence:
         {% else %}
           {{ B }}
         {% endif %}
-      current_feels_like: "{{ states('sensor.home_feels_like') }}"
+      
       diff: "{{ current_feels_like - setpoint }}"
+      
+      # Calculate target_minutes: max(3, 3-(diff * 0.5))
+      target_minutes: "{{ [3, 3 - (diff * 0.5)] | max }}"
       target_mode: |-
-        {% if not is_at_target and diff < -0.3 and current_fan_speed <= 2 %}
+        {# Switch to fan_only if indoor temp is at/near setpoint but feels like is high due to RH #}
+        {% set temp_at_target = (indoor_temp - setpoint) < 0.5 %}
+        {% if temp_at_target and current_feels_like > setpoint and (outdoor_temp - 1) < indoor_temp %}
           fan_only
-        {% elif diff < 0 %}
-          {{ current_mode }}
         {% else %}
           cool
         {% endif %}
       target_speed: |-
-        {% if temp_change_rate != -999 %}
-          {# Use temperature change rate if available #}
-          {% if diff > (deadband_upper * 2) %}
-            {{ [10, current_fan_speed + 1] | min }}
-          {% elif diff < (deadband_lower * 2) %}
-            {{ [1, current_fan_speed - 1] | max }}
-          {% elif temp_change_rate < -0.25 and diff < 0 %}
-            {# Getting cooler and already too cold #}
-            {{ [1, current_fan_speed - 1] | max }}
-          {% elif temp_change_rate > 0.25 and diff > 0 %}
-            {# Getting warmer and already too warm #}
-            {{ [10, current_fan_speed + 1] | min }}
-          {% else %}
-            {{ current_fan_speed }}
-          {% endif %}
+        {# ----------------------------
+          Aggressive get-to-target fan selection
+          Predicts feels like temp at each fan speed, not just supply temp
+          Uses mixing model + RH effects like sensor.home_feels_like
+          ---------------------------- #}
+  
+        {% set best_speed = 10 %}
+        {% set best_time_error = 999 %}
+        {% set best_minutes = 999 %}
+  
+        {# Inputs (expected provided by your script context) #}
+        {% set T_in_raw = indoor_temp | float(default=nan) %}
+        {% set RH_in = indoor_rh | float(default=nan) %}
+        {% set current_FL = current_feels_like | float(default=nan) %}
+        {% set A = setpoint | float(default=nan) %}
+        {% set B = outdoor_temp | float(default=nan) %}
+        {% set RH_out = outdoor_rh | float(default=nan) %}
+  
+        {# Tunables (match sensor.home_feels_like.yml) #}
+        {% set eta1 = 0.75 %}     {# effective whole-system efficiency at fan 1 #}
+        {% set eta10 = 0.5 %}     {# ...at fan 10 (match sensor) #}
+        {% set tau_1 = 60.0 %}    {# minutes at fan 1 #}
+        {% set tau_10 = 14.0 %}   {# minutes at fan 10; lower = more aggressive #}
+        {% set min_delta = 0.3 %} {# °C #}
+        
+        {# Feels like calculation parameters (from sensor) #}
+        {% set mix_max = 0.55 %}
+        {% set rh_boost_max = 6.0 %}
+        {% set v_min = 0.5 %}
+        {% set v_max = 4.0 %}
+        {% set RH0 = 60.0 %}
+        {% set k = 0.1 %}
+        {% set e_constant = 2.718281828 %}
+  
+        {# If missing inputs, fall back to push hard #}
+        {% if current_FL is not number or A is not number or B is not number or RH_out is not number %}
+          {% set best_speed = 10 %}
         {% else %}
-          {# Compare feels like at -1, current, +1 fan speeds #}
-          {% set speeds_to_test = [
-            [1, current_fan_speed - 1] | max,
-            current_fan_speed,
-            [10, current_fan_speed + 1] | min
-          ] %}
-          {% set best_speed = current_fan_speed %}
-          {% set best_error = 999 %}
-          
-          {% for test_speed in speeds_to_test %}
-            {% set T = indoor_temp %}
-            {% set RH = indoor_rh %}
-            {% set fan_frac = (test_speed - 1) / 9 %}
-            {% set cool_temp_drop_max = 4.0 %}
-            {% set T_eff = T - (cool_temp_drop_max * fan_frac) %}
-            {% set v_min = 0.10 %}
-            {% set v_max = 1.50 %}
-            {% set v = v_min + (test_speed - 1) * (v_max - v_min) / 9 %}
-            {# Euler's number for saturation vapor pressure calculation #}
-            {% set e_constant = 2.71828 %}
-            {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
-            {% set e = (RH / 100.0) * es %}
-            {% set AT = T_eff + 0.33 * e - 0.70 * v - 4.0 %}
-            {% set error = (AT - setpoint) | abs %}
-            
-            {% if error < best_error %}
-              {% set best_error = error %}
-              {% set best_speed = test_speed %}
+  
+          {# --- Wet-bulb (Stull) with correct atan placement --- #}
+          {% set Twb =
+            (
+              (B * ((0.151977 * (RH_out + 8.313659) ** 0.5) | atan))
+              + ((B + RH_out) | atan)
+              - ((RH_out - 1.676331) | atan)
+              + (0.00391838 * RH_out ** 1.5 * ((0.023101 * RH_out) | atan))
+              - 4.686035
+            )
+          %}
+  
+          {# --- Supply heat gain model (linear, clamped, anchor at 35C -> 1.5C) --- #}
+          {% set gain_min = 0.0 %}
+          {% set gain_max = 2.0 %}
+          {% set T_low = 23.0 %}
+          {% set T_high = 40.0 %}
+          {% set T_anchor = 35.0 %}
+          {% set gain_anchor = 1.5 %}
+          {% set slope = (gain_anchor - gain_min) / (T_anchor - T_low) %}
+          {% if B is not number %}
+            {% set supply_heat_gain = gain_anchor %}
+          {% else %}
+            {% set raw = gain_min + slope * (B - T_low) %}
+            {% set supply_heat_gain = [gain_min, [raw, gain_max] | min] | max %}
+          {% endif %}
+  
+          {# If already at/below setpoint, choose minimum #}
+          {% if current_FL <= A %}
+            {% set best_speed = 1 %}
+          {% else %}
+  
+            {# Test fan speeds from 1..10 #}
+            {% for test_speed in range(1, 11) %}
+              {# Fan normalization (match sensor logic exactly) #}
+              {# This produces fan_frac in range ~0.18 to ~1.0 for fans 1-10 #}
+              {% set fan = [1, [test_speed, 10] | min] | max %}
+              {% set fan_frac = (fan - 1) / 11 %}
+              {% if fan > 0 %}
+                {% set fan_frac = fan_frac + 2/11 %}
+              {% endif %}
+  
+              {# Efficiency at this fan #}
+              {% set eta = eta1 + (eta10 - eta1) * fan_frac %}
+  
+              {# Predicted supply temp at this fan (roof heat gain included) #}
+              {% set Ts_pred = (B - eta * (B - Twb)) + supply_heat_gain %}
+              
+              {# Calculate predicted feels like at this fan speed (match sensor) #}
+              {# Mixing model: effective indoor temp shifts toward Ts_pred #}
+              {% set mix_coeff = mix_max * fan_frac %}
+              {% set T_eff = T_in_raw - mix_coeff * (T_in_raw - Ts_pred) %}
+              
+              {# RH increases slightly in cool mode #}
+              {% set RH_eff = [0, [RH_in + (rh_boost_max * fan_frac), 100] | min] | max %}
+              
+              {# Airspeed term #}
+              {% set v = v_min + fan_frac * (v_max - v_min) %}
+              
+              {# Steadman apparent temp using T_eff + RH_eff + v (quadratic RH scaling) #}
+              {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
+              {% set rh = RH_eff | float %}
+              {% set rh_lin = (rh / 100.0) %}
+              {% set rh_extra = (([0.0, rh - RH0] | max / (100.0 - RH0)) ** 2) %}
+              {% set e = es * (rh_lin + k * rh_extra) %}
+              {% set predicted_FL = T_eff + 0.3 * e - 0.80 * v - 4.0 %}
+  
+              {# Driving delta: current feels like above predicted feels like #}
+              {% set dT = current_FL - predicted_FL %}
+  
+              {# Fan-dependent time constant (linear interpolation) #}
+              {% set tau = tau_1 + (tau_10 - tau_1) * ((test_speed - 1) / 9) %}
+  
+              {# First-order time to reach setpoint (using feels like temp):
+                FL(t) = predicted_FL + (current_FL - predicted_FL)*exp(-t/tau)
+                => t = -tau * ln((A - predicted_FL)/(current_FL - predicted_FL))
+              #}
+              {% if dT > min_delta and A > predicted_FL and current_FL > A %}
+                {% set ratio = (A - predicted_FL) / (current_FL - predicted_FL) %}
+                {% if ratio > 0 and ratio < 1 %}
+                  {% set estimated_minutes = (-tau * (ratio | log)) %}
+                {% else %}
+                  {% set estimated_minutes = 999 %}
+                {% endif %}
+              {% else %}
+                {% set estimated_minutes = 999 %}
+              {% endif %}
+  
+              {# Choose the LOWEST speed that meets target_minutes (aggressive),
+                else track closest time #}
+              {% if estimated_minutes <= target_minutes %}
+                {% set best_speed = test_speed %}
+                {% set best_minutes = estimated_minutes %}
+                {% set best_time_error = 0 %}
+                {% break %}
+              {% else %}
+                {% set time_error = (estimated_minutes - target_minutes) | abs %}
+                {% if time_error < best_time_error %}
+                  {% set best_time_error = time_error %}
+                  {% set best_speed = test_speed %}
+                  {% set best_minutes = estimated_minutes %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+  
+            {# If we couldn't compute anything sensible, push hard #}
+            {% if best_minutes >= 900 %}
+              {% set best_speed = 10 %}
             {% endif %}
-          {% endfor %}
-          
+  
+          {% endif %}
+        {% endif %}
+  
+        {# Cap speed change to max ±2 from current #}
+        {% if best_speed > current_fan_speed + 2 %}
+          {{ current_fan_speed + 2 }}
+        {% elif best_speed < current_fan_speed - 2 %}
+          {{ current_fan_speed - 2 }}
+        {% else %}
           {{ best_speed }}
         {% endif %}
+  
+  # Apply target mode and calculated speed
   - action: script.evap_set_evap_target
     data:
       evap_entity: "{{ e }}"
