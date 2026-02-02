@@ -13,7 +13,8 @@ triggers:
     id: ha_start
     trigger: homeassistant
 variables:
-  evap_entity: climate.evap
+  evap_entity: select.roofevap1_e90248_evap_mode
+  fan_speed_entity: select.roofevap1_e90248_evap_fan_speed
   setpoint_entity: input_number.target_temperature
   auto_entity: input_boolean.automatic_control
   outdoor_temp_entity: sensor.viewbank_temp
@@ -48,6 +49,7 @@ actions:
       scene_id: evap_restore
       snapshot_entities:
         - "{{ evap_entity }}"
+        - "{{ fan_speed_entity }}"
     action: scene.create
 
   # Initialize global variables
@@ -72,7 +74,7 @@ actions:
             indoor_temp_raw: "{{ states(indoor_temperature_entity) | float(22) }}"
             indoor_rh: "{{ states(indoor_humidity_entity) | float(50) }}"
             cur_mode: "{{ states(evap_entity) }}"
-            cur_fan: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+            cur_fan: "{{ states(fan_speed_entity) | int(1) }}"
 
             # Calculate indoor feels like temperature with current fan speed
             indoor_feels_like_temp: "{{ states('sensor.home_feels_like') }}"
@@ -119,6 +121,7 @@ actions:
                           continue_on_error: true
                           data:
                             evap_entity: "{{ evap_entity }}"
+                            fan_speed_entity: "{{ fan_speed_entity }}"
                             setpoint_entity: "{{ setpoint_entity }}"
                             outdoor_temp_entity: "{{ outdoor_temp_entity }}"
                             outdoor_humidity_entity: "{{ outdoor_humidity_entity }}"
@@ -137,6 +140,7 @@ actions:
                       continue_on_error: true
                       data:
                         evap_entity: "{{ evap_entity }}"
+                        fan_speed_entity: "{{ fan_speed_entity }}"
                         setpoint_entity: "{{ setpoint_entity }}"
                         outdoor_temp_entity: "{{ outdoor_temp_entity }}"
                         outdoor_humidity_entity: "{{ outdoor_humidity_entity }}"
@@ -165,6 +169,7 @@ actions:
                   continue_on_error: true
                   data:
                     evap_entity: "{{ evap_entity }}"
+                    fan_speed_entity: "{{ fan_speed_entity }}"
                     pad_drying_entity: "{{ pad_drying_entity }}"
                     pad_dry_time_speed1: "{{ pad_dry_time_speed1 }}"
                     pad_dry_time_speed10: "{{ pad_dry_time_speed10 }}"
@@ -190,6 +195,7 @@ actions:
                   continue_on_error: true
                   data:
                     evap_entity: "{{ evap_entity }}"
+                    fan_speed_entity: "{{ fan_speed_entity }}"
                     pad_drying_entity: "{{ pad_drying_entity }}"
                     pad_dry_time_speed1: "{{ pad_dry_time_speed1 }}"
                     pad_dry_time_speed10: "{{ pad_dry_time_speed10 }}"
@@ -226,6 +232,7 @@ actions:
                           continue_on_error: true
                           data:
                             evap_entity: "{{ evap_entity }}"
+                            fan_speed_entity: "{{ fan_speed_entity }}"
                             target_mode: "off"
                             target_speed: -1
                             min_fan_speed_entity: "{{ min_fan_speed_entity | default(none) }}"
@@ -240,6 +247,7 @@ actions:
                   continue_on_error: true
                   data:
                     evap_entity: "{{ evap_entity }}"
+                    fan_speed_entity: "{{ fan_speed_entity }}"
                     setpoint_entity: "{{ setpoint_entity }}"
                     outdoor_temp_entity: "{{ outdoor_temp_entity }}"
                     outdoor_humidity_entity: "{{ outdoor_humidity_entity }}"
@@ -255,7 +263,7 @@ actions:
 
         # Record state after changes
         - variables:
-            new_fan_speed: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+            new_fan_speed: "{{ states(fan_speed_entity) | int(1) }}"
             new_fan_mode: "{{ states(evap_entity) }}"
             pad_drying_necessary: |-
               {% if pad_drying_necessary or states(evap_entity) == "cool" %}
