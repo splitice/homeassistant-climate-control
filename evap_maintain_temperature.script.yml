@@ -100,13 +100,14 @@ sequence:
       target_speed: |-
         {% if temp_change_rate != -999 %}
           {# Use temperature change rate if available #}
+          {% set min_speed = 0 if current_mode == 'off' else 1 %}
           {% if diff > (deadband_upper * 2) %}
             {{ [10, current_fan_speed + 1] | min }}
           {% elif diff < (deadband_lower * 2) %}
-            {{ [1, current_fan_speed - 1] | max }}
+            {{ [min_speed, current_fan_speed - 1] | max }}
           {% elif temp_change_rate < -0.25 and diff < 0 %}
             {# Getting cooler and already too cold #}
-            {{ [1, current_fan_speed - 1] | max }}
+            {{ [min_speed, current_fan_speed - 1] | max }}
           {% elif temp_change_rate > 0.25 and diff > 0 %}
             {# Getting warmer and already too warm #}
             {{ [10, current_fan_speed + 1] | min }}
@@ -115,23 +116,41 @@ sequence:
           {% endif %}
         {% else %}
           {# Compare feels like at -1, current, +1 fan speeds #}
-          {% set speeds_to_test = [
-            [1, current_fan_speed - 1] | max,
-            current_fan_speed,
-            [10, current_fan_speed + 1] | min
-          ] %}
+          {# If current mode is off, include fan speed 0 (off) as a valid option #}
+          {% if current_mode == 'off' %}
+            {% set speeds_to_test = [
+              0,
+              [1, current_fan_speed - 1] | max,
+              current_fan_speed,
+              [10, current_fan_speed + 1] | min
+            ] %}
+          {% else %}
+            {% set speeds_to_test = [
+              [1, current_fan_speed - 1] | max,
+              current_fan_speed,
+              [10, current_fan_speed + 1] | min
+            ] %}
+          {% endif %}
           {% set best_speed = current_fan_speed %}
           {% set best_error = 999 %}
           
           {% for test_speed in speeds_to_test %}
             {% set T = indoor_temp %}
             {% set RH = indoor_rh %}
-            {% set fan_frac = (test_speed - 1) / 9 %}
-            {% set cool_temp_drop_max = 4.0 %}
-            {% set T_eff = T - (cool_temp_drop_max * fan_frac) %}
-            {% set v_min = 0.10 %}
-            {% set v_max = 1.50 %}
-            {% set v = v_min + (test_speed - 1) * (v_max - v_min) / 9 %}
+            
+            {# For fan speed 0 (off), there's no cooling or forced airflow #}
+            {% if test_speed == 0 %}
+              {% set T_eff = T %}
+              {% set v = 0.0 %}  {# No forced airflow #}
+            {% else %}
+              {% set fan_frac = (test_speed - 1) / 9 %}
+              {% set cool_temp_drop_max = 4.0 %}
+              {% set T_eff = T - (cool_temp_drop_max * fan_frac) %}
+              {% set v_min = 0.10 %}
+              {% set v_max = 1.50 %}
+              {% set v = v_min + (test_speed - 1) * (v_max - v_min) / 9 %}
+            {% endif %}
+            
             {# Euler's number for saturation vapor pressure calculation #}
             {% set e_constant = 2.71828 %}
             {% set es = 6.105 * (e_constant ** (17.27 * T_eff / (237.7 + T_eff))) %}
@@ -157,7 +176,7 @@ sequence:
     data:
       evap_entity: "{{ mode_entity }}"
       fan_speed_entity: "{{ speed_entity }}"
-      target_mode: "{{ target_mode }}"
+      target_mode: "{{ 'off' if target_speed == 0 else target_mode }}"
       target_speed: "{{ target_speed }}"
       min_fan_speed_entity: "{{ min_fan_speed_entity | default(none) }}"
       max_fan_speed_entity: "{{ max_fan_speed_entity | default(none) }}"
