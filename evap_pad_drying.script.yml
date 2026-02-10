@@ -3,8 +3,12 @@ description: "Manage evaporative cooler pad drying cycle with progress tracking"
 mode: queued
 fields:
   evap_entity:
-    description: Climate entity
-    example: climate.evap
+    description: Mode select entity
+    example: select.roofevap1_e90248_evap_mode
+    required: true
+  fan_speed_entity:
+    description: Fan speed select entity
+    example: select.roofevap1_e90248_evap_fan_speed
     required: true
   pad_drying_entity:
     description: Number input entity to track pad drying progress (0-100%)
@@ -36,9 +40,10 @@ fields:
     example: input_number.max_fan_speed
 sequence:
   - variables:
-      e: "{{ evap_entity }}"
+      mode_entity: "{{ evap_entity }}"
+      speed_entity: "{{ fan_speed_entity }}"
       cur_mode: "{{ states(evap_entity) }}"
-      current_fan_speed: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+      current_fan_speed: "{{ states(fan_speed_entity) | int(1) }}"
       pad_dry_percent: "{{ states(pad_drying_entity) | float(0) }}"
       dry_time_1: "{{ pad_dry_time_speed1 | default(10) | float }}"
       dry_time_10: "{{ pad_dry_time_speed10 | default(5) | float }}"
@@ -59,7 +64,8 @@ sequence:
                 sequence:
                   - action: script.evap_set_evap_target
                     data:
-                      evap_entity: "{{ e }}"
+                      evap_entity: "{{ mode_entity }}"
+                      fan_speed_entity: "{{ speed_entity }}"
                       target_mode: "off"
                       target_speed: -1
                       min_fan_speed_entity: "{{ min_fan_speed_entity | default(none) }}"
@@ -80,7 +86,8 @@ sequence:
                 sequence:
                   - action: script.evap_set_evap_target
                     data:
-                      evap_entity: "{{ e }}"
+                      evap_entity: "{{ mode_entity }}"
+                      fan_speed_entity: "{{ speed_entity }}"
                       target_mode: "fan_only"
                       target_speed: 2
                       min_fan_speed_entity: "{{ min_fan_speed_entity | default(none) }}"
@@ -89,7 +96,8 @@ sequence:
             default:
               - action: script.evap_set_evap_target
                 data:
-                  evap_entity: "{{ e }}"
+                  evap_entity: "{{ mode_entity }}"
+                  fan_speed_entity: "{{ speed_entity }}"
                   target_mode: "fan_only"
                   target_speed: -1
                   min_fan_speed_entity: "{{ min_fan_speed_entity | default(none) }}"
@@ -103,7 +111,7 @@ sequence:
         {% else %}
           {% set elapsed_seconds = as_timestamp(now()) - pad_start_time %}
           {% set elapsed_minutes = elapsed_seconds / 60 %}
-          {% set current_fan = state_attr(evap_entity, 'fan_mode') | int(1) %}
+          {% set current_fan = states(speed_entity) | int(1) %}
           {# Linear interpolation of drying time based on fan speed #}
           {# Handle edge case where both drying times are equal #}
           {% if dry_time_1 == dry_time_10 %}
@@ -134,7 +142,8 @@ sequence:
         sequence:
           - action: script.evap_set_evap_target
             data:
-              evap_entity: "{{ e }}"
+              evap_entity: "{{ mode_entity }}"
+              fan_speed_entity: "{{ speed_entity }}"
               target_mode: "fan_only"
               target_speed: "{{ target_speed_lower }}"
               min_fan_speed_entity: "{{ min_fan_speed_entity | default(none) }}"

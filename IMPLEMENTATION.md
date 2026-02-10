@@ -12,7 +12,8 @@ Description: An always running automation that monitors the evaporative cooler a
 Inputs:
 - auto_entity: Boolean input entity to enable/disable automation.
 - setpoint_entity: The desired temperature setpoint entity.
-- evap_entity: The evaporative cooler climate entity to control.
+- evap_entity: The evaporative cooler mode select entity to control (e.g., select.roofevap1_e90248_evap_mode).
+- fan_speed_entity: The evaporative cooler fan speed select entity to control (e.g., select.roofevap1_e90248_evap_fan_speed).
 - pad_drying_entity: number input entity to track percent pad drying progress. (0-100%)
 - outdoor_temp_entity: Optional. Outdoor temperature sensor entity for wet-bulb calculations.
 - outdoor_humidity_entity: Optional. Outdoor humidity sensor entity for wet-bulb calculations.
@@ -110,7 +111,8 @@ repeat while(auto_entity is on) {
 Description: Script to maintain the target temperature by adjusting fan speed based on temperature difference within a defined deadband with the goal of minimizing large fan speed changes while keeping temperature stable within the target range.
 
 Inputs:
- - evap_entity
+ - evap_entity: The evaporative cooler mode select entity to control (e.g., select.roofevap1_e90248_evap_mode).
+ - fan_speed_entity: The evaporative cooler fan speed select entity to control (e.g., select.roofevap1_e90248_evap_fan_speed).
  - setpoint_temp
  - wet_bulb_temp
  - indoor_temperature_entity
@@ -152,7 +154,8 @@ Notes:
  - The larger the temperature difference, the faster the fan speed increase.
 
 Inputs:
-- evap_entity: The evaporative cooler climate entity to control.
+- evap_entity: The evaporative cooler mode select entity to control (e.g., select.roofevap1_e90248_evap_mode).
+- fan_speed_entity: The evaporative cooler fan speed select entity to control (e.g., select.roofevap1_e90248_evap_fan_speed).
 - setpoint_temp: The desired temperature setpoint.
 - outdoor_temp_entity
 - outdoor_humidity_entity
@@ -182,7 +185,8 @@ call set_evap_target: target_mode = cool, target_speed = target_speed, evap_enti
 ## Evap Pad Drying Script
 
 Inputs:
-- evap_entity: The evaporative cooler climate entity to control.
+- evap_entity: The evaporative cooler mode select entity to control (e.g., select.roofevap1_e90248_evap_mode).
+- fan_speed_entity: The evaporative cooler fan speed select entity to control (e.g., select.roofevap1_e90248_evap_fan_speed).
 - pad_drying_entity: time sensor entity to track pad drying duration.
 - pad_dry_time_speed1: Optional. Minimum time in minutes to run fan_only for pad drying. Defaults to 10 minutes.
 - pad_dry_time_speed10: Optional. Minimum time in minutes to run fan_only for pad drying at speed 10. Defaults to 5 minutes.
@@ -234,15 +238,16 @@ if (lower_fan) {
 ## Set Evap Target Script
 
 Inputs:
-- evap_entity: The evaporative cooler climate entity to control.
+- evap_entity: The evaporative cooler mode select entity to control (e.g., select.roofevap1_e90248_evap_mode).
+- fan_speed_entity: The evaporative cooler fan speed select entity to control (e.g., select.roofevap1_e90248_evap_fan_speed).
 - target_mode: Target HVAC mode (off, fan_only, cool).
-- target_speed: Target fan speed (1-5).
-- min_fan_speed_entity: Optional. Entity defining minimum fan speed (1-5). If not provided min fan speed is 1
-- max_fan_speed_entity: Optional. Entity defining maximum fan speed (1-5). If not provided max fan speed is 10
+- target_speed: Target fan speed (1-10).
+- min_fan_speed_entity: Optional. Entity defining minimum fan speed (1-10). If not provided min fan speed is 1
+- max_fan_speed_entity: Optional. Entity defining maximum fan speed (1-10). If not provided max fan speed is 10
 
 ```
-set current_mode = current state of evap_entity
-set current_fan_speed = current fan speed of evap_entity
+set current_mode = current state of evap_entity (mode select)
+set current_fan_speed = current state of fan_speed_entity (fan speed select)
 
 if (current_mode != target_mode) {
     if (target_mode == off and current_fan_speed >= 2) {
@@ -252,11 +257,11 @@ if (current_mode != target_mode) {
         }
     }
 
-    set evap_entity to target_mode
+    set evap_entity (mode select) to target_mode using select.select_option
     wait on evap_entity to reach target_mode (15 seconds timeout)
 }
 
-set current_fan_speed = current fan speed of evap_entity
+set current_fan_speed = current state of fan_speed_entity
 if abs(target_speed - current_fan_speed) > 2 {
     if (target_speed > current_fan_speed) {
         target_speed = current_fan_speed + 2
@@ -276,8 +281,8 @@ if (max_fan_speed_entity is defined) {
 }
 
 while (target_speed > 0 and current_fan_speed != target_speed && repeat.index < 15) {
-    set evap_entity fan speed to target_speed
-    wait on evap_entity to reach target_speed (15 seconds timeout) - continue even if timeout, timeout after 2s
-    set current_fan_speed = current fan speed of evap_entity
+    set fan_speed_entity to target_speed using select.select_option
+    wait 2 seconds
+    set current_fan_speed = current state of fan_speed_entity
 }
 ```

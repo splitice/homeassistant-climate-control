@@ -3,8 +3,12 @@ description: Maintain target temperature with minimal fan speed changes (v4)
 mode: queued
 fields:
   evap_entity:
-    description: Climate entity
-    example: climate.evap
+    description: Mode select entity
+    example: select.roofevap1_e90248_evap_mode
+    required: true
+  fan_speed_entity:
+    description: Fan speed select entity
+    example: select.roofevap1_e90248_evap_fan_speed
     required: true
   setpoint_entity:
     description: Entity containing target temperature (°C)
@@ -52,8 +56,9 @@ fields:
     required: true
 sequence:
   - variables:
-      e: "{{ evap_entity }}"
-      current_fan_speed: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+      mode_entity: "{{ evap_entity }}"
+      speed_entity: "{{ fan_speed_entity }}"
+      current_fan_speed: "{{ states(fan_speed_entity) | int(1) }}"
       current_mode: "{{ states(evap_entity) }}"
       setpoint: "{{ states(setpoint_entity) | float(22) }}"
       outdoor_temp: "{{ states(outdoor_temp_entity) | float(30) }}"
@@ -164,7 +169,8 @@ sequence:
         {% endif %}
   - action: script.evap_set_evap_target
     data:
-      evap_entity: "{{ e }}"
+      evap_entity: "{{ mode_entity }}"
+      fan_speed_entity: "{{ speed_entity }}"
       target_mode: |-
         {% if target_speed == 0 %}
           off

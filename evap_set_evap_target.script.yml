@@ -3,8 +3,12 @@ description: "Set evaporative cooler target mode and fan speed with safety const
 mode: queued
 fields:
   evap_entity:
-    description: Climate entity
-    example: climate.evap
+    description: Mode select entity
+    example: select.roofevap1_e90248_evap_mode
+    required: true
+  fan_speed_entity:
+    description: Fan speed select entity
+    example: select.roofevap1_e90248_evap_fan_speed
     required: true
   target_mode:
     description: Target HVAC mode (off, fan_only, cool)
@@ -22,9 +26,10 @@ fields:
     example: input_number.max_fan_speed
 sequence:
   - variables:
-      e: "{{ evap_entity }}"
+      mode_entity: "{{ evap_entity }}"
+      speed_entity: "{{ fan_speed_entity }}"
       current_mode: "{{ states(evap_entity) }}"
-      current_fan_speed: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+      current_fan_speed: "{{ states(fan_speed_entity) | int(1) }}"
       desired_mode: "{{ target_mode }}"
       desired_speed_raw: "{{ target_speed | int(-1) }}"
   
@@ -57,18 +62,18 @@ sequence:
           - condition: template
             value_template: "{{ current_mode != transition_mode }}"
         sequence:
-          - action: climate.set_hvac_mode
+          - action: select.select_option
             continue_on_error: true
             data:
-              entity_id: "{{ e }}"
-              hvac_mode: "{{ transition_mode }}"
-          - wait_template: "{{ states(e) == transition_mode }}"
+              entity_id: "{{ mode_entity }}"
+              option: "{{ transition_mode }}"
+          - wait_template: "{{ states(mode_entity) == transition_mode }}"
             timeout: "00:00:15"
             continue_on_timeout: true
   
   # Update current state after mode change
   - variables:
-      current_fan_speed_after_mode: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+      current_fan_speed_after_mode: "{{ states(speed_entity) | int(1) }}"
       final_target_speed: "{{ transition_speed }}"
   
   # Apply max 2-step change constraint
@@ -112,11 +117,11 @@ sequence:
           - repeat:
               while:
                 - condition: template
-                  value_template: "{{ state_attr(e, 'fan_mode') | int(1) != final_speed and repeat.index < max_retries }}"
+                  value_template: "{{ states(speed_entity) | int(1) != final_speed and repeat.index < max_retries }}"
               sequence:
-                - action: climate.set_fan_mode
+                - action: select.select_option
                   continue_on_error: true
                   data:
-                    entity_id: "{{ e }}"
-                    fan_mode: "{{ final_speed }}"
+                    entity_id: "{{ speed_entity }}"
+                    option: "{{ final_speed }}"
                 - delay: "00:00:02"
