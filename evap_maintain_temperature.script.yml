@@ -141,7 +141,7 @@ sequence:
             {# For fan speed 0 (off), there's no cooling or forced airflow #}
             {% if test_speed == 0 %}
               {% set T_eff = T %}
-              {% set v = 0.0 %}  {# Natural convection only #}
+              {% set v = 0.0 %}  {# No forced airflow #}
             {% else %}
               {% set fan_frac = (test_speed - 1) / 9 %}
               {% set cool_temp_drop_max = 4.0 %}

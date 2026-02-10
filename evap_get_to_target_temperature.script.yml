@@ -162,7 +162,8 @@ sequence:
               {% if test_speed == 0 %}
                 {# No cooling, no forced airflow - predicted feels like is current indoor temp #}
                 {% set predicted_FL = T_in_raw %}
-                {% set estimated_minutes = 999 %}  {# Off mode won't cool, so time is infinite #}
+                {# Off mode won't cool, use 999 as sentinel for infinite time #}
+                {% set estimated_minutes = 999 %}
               {% else %}
                 {# Fan normalization (match sensor logic exactly) #}
                 {# This produces fan_frac in range ~0.18 to ~1.0 for fans 1-10 #}
