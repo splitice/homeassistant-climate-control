@@ -50,7 +50,8 @@ Activated when cooling is no longer needed:
 The automation requires the following Home Assistant entities:
 
 ### Core Entities
-- `climate.evap` - The evaporative cooler climate entity
+- `select.roofevap1_e90248_evap_mode` - The evaporative cooler mode select entity (options: "off", "fan_only", "cool")
+- `select.roofevap1_e90248_evap_fan_speed` - The evaporative cooler fan speed select entity (options: "1" through "10")
 - `input_number.target_temperature` - Target temperature setpoint
 - `input_boolean.automatic_control` - Toggle for automatic control
 - `input_number.pad_drying_progress` - Tracks pad drying progress (0-100%)
@@ -64,7 +65,7 @@ The automation requires the following Home Assistant entities:
 - `input_number.min_fan_speed` - Minimum fan speed constraint (1-10)
 - `input_number.max_fan_speed` - Maximum fan speed constraint (1-10)
 
-**Note**: Replace `sensor.viewbank_temp` and `sensor.viewbank_humidity` with your actual outdoor sensor entity IDs. The automation calculates wet bulb temperature inline using the Stull approximation.
+**Note**: Replace `sensor.viewbank_temp` and `sensor.viewbank_humidity` with your actual outdoor sensor entity IDs. The automation calculates wet bulb temperature inline using the Stull approximation. The evaporative cooler entities are ESPHome-based select entities that control mode and fan speed separately.
 
 ### Creating Required Input Entities
 
@@ -101,7 +102,8 @@ The automation can be customized through variables defined at the top of `evap-c
 ```yaml
 variables:
   # Core entities (required)
-  evap_entity: climate.evap
+  evap_entity: select.roofevap1_e90248_evap_mode
+  fan_speed_entity: select.roofevap1_e90248_evap_fan_speed
   setpoint_entity: input_number.target_temperature
   auto_entity: input_boolean.automatic_control
   outdoor_temp_entity: sensor.viewbank_temp

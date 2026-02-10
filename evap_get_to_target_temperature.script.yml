@@ -3,8 +3,12 @@ description: "Aggressively cool to reach target temperature (v4)"
 mode: queued
 fields:
   evap_entity:
-    description: Climate entity
-    example: climate.evap
+    description: Mode select entity
+    example: select.roofevap1_e90248_evap_mode
+    required: true
+  fan_speed_entity:
+    description: Fan speed select entity
+    example: select.roofevap1_e90248_evap_fan_speed
     required: true
   setpoint_entity:
     description: Entity containing target temperature (°C)
@@ -34,8 +38,9 @@ fields:
     example: input_number.max_fan_speed
 sequence:
   - variables:
-      e: "{{ evap_entity }}"
-      current_fan_speed: "{{ state_attr(evap_entity, 'fan_mode') | int(1) }}"
+      mode_entity: "{{ evap_entity }}"
+      speed_entity: "{{ fan_speed_entity }}"
+      current_fan_speed: "{{ states(fan_speed_entity) | int(1) }}"
       setpoint: "{{ states(setpoint_entity) | float(22) }}"
       outdoor_temp: "{{ states(outdoor_temp_entity) | float(30) }}"
       outdoor_rh: "{{ states(outdoor_humidity_entity) | float(50) }}"
@@ -237,7 +242,8 @@ sequence:
   # Apply target mode and calculated speed
   - action: script.evap_set_evap_target
     data:
-      evap_entity: "{{ e }}"
+      evap_entity: "{{ mode_entity }}"
+      fan_speed_entity: "{{ speed_entity }}"
       target_mode: "{{ target_mode }}"
       target_speed: "{{ target_speed }}"
       min_fan_speed_entity: "{{ min_fan_speed_entity | default(none) }}"
