@@ -20,13 +20,13 @@ template:
           {% set external_diff = states('sensor.home_differential_temperature') | float %}
           {% set T_in = states('sensor.home_temperature') | float(default=nan) + (external_diff * 0.05) %}
           {# Indoor humidity with fallback #}
-          {% set RH_in = states('sensor.climate_indoor_humidity') if states('sensor.climate_indoor_humidity') not in ['unknown','unavailable','none'] else states('sensor.viewbank_humidity') | float(default=nan) %}
+          {% set RH_in = states('sensor.climate_indoor_humidity') if states('sensor.climate_indoor_humidity') not in ['unknown','unavailable','none'] else states('sensor.viewbank_humidity') %}
           {% set RH_in = RH_in | float(default=nan) %}
           {# Outdoor dry-bulb temperature with fallback #}
-          {% set B = states('sensor.gw3000c_outdoor_temperature') if states('sensor.gw3000c_outdoor_temperature') not in ['unknown','unavailable','none'] else states('sensor.viewbank_temp') | float(default=nan) %}
+          {% set B = states('sensor.gw3000c_outdoor_temperature') if states('sensor.gw3000c_outdoor_temperature') not in ['unknown','unavailable','none'] else states('sensor.viewbank_temp') %}
           {% set B = B | float(default=nan) %}
           {# Outdoor humidity with fallback #}
-          {% set RH_out = states('sensor.gw3000c_humidity') if states('sensor.gw3000c_humidity') not in ['unknown','unavailable','none'] else states('sensor.viewbank_humidity') | float(default=nan) %}
+          {% set RH_out = states('sensor.gw3000c_humidity') if states('sensor.gw3000c_humidity') not in ['unknown','unavailable','none'] else states('sensor.viewbank_humidity') %}
           {% set RH_out = RH_out | float(default=nan) %}
           {% set mode = states('select.roofevap1_e90248_evap_mode') %}
           {% set fan_raw = states('select.roofevap1_e90248_evap_fan_speed') %}
@@ -162,6 +162,6 @@ template:
           {% endif %}
         attributes:
           air_temp_c: "{{ states('sensor.home_temperature') | float(0) }}"
-          humidity_pct: "{{ states('sensor.climate_indoor_humidity') if states('sensor.climate_indoor_humidity') not in ['unknown','unavailable','none'] else states('sensor.viewbank_humidity') | float(0) }}"
+          humidity_pct: "{{ (states('sensor.climate_indoor_humidity') if states('sensor.climate_indoor_humidity') not in ['unknown','unavailable','none'] else states('sensor.viewbank_humidity')) | float(0) }}"
           evap_state: "{{ states('select.roofevap1_e90248_evap_mode') }}"
           evap_fan_mode: "{{ states('select.roofevap1_e90248_evap_fan_speed') }}"

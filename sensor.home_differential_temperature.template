@@ -1,1 +1,1 @@
-{{(states("sensor.gw3000c_outdoor_temperature") if states("sensor.gw3000c_outdoor_temperature") not in ["unknown","unavailable","none"] else states("sensor.viewbank_temp") | float) | float - states("sensor.home_temperature") | float}}
+{{(states("sensor.gw3000c_outdoor_temperature") if states("sensor.gw3000c_outdoor_temperature") not in ["unknown","unavailable","none"] else states("sensor.viewbank_temp")) | float - states("sensor.home_temperature") | float}}
