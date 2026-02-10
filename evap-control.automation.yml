@@ -17,11 +17,33 @@ variables:
   fan_speed_entity: select.roofevap1_e90248_evap_fan_speed
   setpoint_entity: input_number.target_temperature
   auto_entity: input_boolean.automatic_control
-  outdoor_temp_entity: sensor.viewbank_temp
-  outdoor_humidity_entity: sensor.viewbank_humidity
+  outdoor_temp_entity_primary: sensor.gw3000c_outdoor_temperature
+  outdoor_temp_entity_fallback: sensor.viewbank_temp
+  outdoor_humidity_entity_primary: sensor.gw3000c_humidity
+  outdoor_humidity_entity_fallback: sensor.viewbank_humidity
   indoor_temperature_entity: sensor.home_temperature
-  indoor_humidity_entity: sensor.viewbank_humidity
+  indoor_humidity_entity_primary: sensor.climate_indoor_humidity
+  indoor_humidity_entity_fallback: sensor.viewbank_humidity
   pad_drying_entity: input_number.pad_drying_progress
+  # Resolved entities with fallback logic
+  outdoor_temp_entity: |-
+    {% if states(outdoor_temp_entity_primary) not in ['unknown', 'unavailable', 'none'] %}
+      {{ outdoor_temp_entity_primary }}
+    {% else %}
+      {{ outdoor_temp_entity_fallback }}
+    {% endif %}
+  outdoor_humidity_entity: |-
+    {% if states(outdoor_humidity_entity_primary) not in ['unknown', 'unavailable', 'none'] %}
+      {{ outdoor_humidity_entity_primary }}
+    {% else %}
+      {{ outdoor_humidity_entity_fallback }}
+    {% endif %}
+  indoor_humidity_entity: |-
+    {% if states(indoor_humidity_entity_primary) not in ['unknown', 'unavailable', 'none'] %}
+      {{ indoor_humidity_entity_primary }}
+    {% else %}
+      {{ indoor_humidity_entity_fallback }}
+    {% endif %}
   max_fan_speed_entity: null
   min_fan_speed_entity: null
   maintain_threshold_upper: 1.0

@@ -58,14 +58,20 @@ The automation requires the following Home Assistant entities:
 
 ### Temperature & Humidity Sensors
 - `sensor.home_temperature` - Indoor temperature sensor
-- `sensor.viewbank_temp` - Outdoor dry-bulb temperature sensor
-- `sensor.viewbank_humidity` - Outdoor and indoor relative humidity sensor
+- `sensor.gw3000c_outdoor_temperature` - Outdoor dry-bulb temperature sensor (with fallback to `sensor.viewbank_temp`)
+- `sensor.gw3000c_humidity` - Outdoor relative humidity sensor (with fallback to `sensor.viewbank_humidity`)
+- `sensor.climate_indoor_humidity` - Indoor relative humidity sensor (with fallback to `sensor.viewbank_humidity`)
 
 ### Optional Entities
 - `input_number.min_fan_speed` - Minimum fan speed constraint (1-10)
 - `input_number.max_fan_speed` - Maximum fan speed constraint (1-10)
 
-**Note**: Replace `sensor.viewbank_temp` and `sensor.viewbank_humidity` with your actual outdoor sensor entity IDs. The automation calculates wet bulb temperature inline using the Stull approximation. The evaporative cooler entities are ESPHome-based select entities that control mode and fan speed separately.
+**Note**: The automation uses the following sensors with automatic fallback to viewbank sensors if unavailable:
+- `sensor.gw3000c_outdoor_temperature` (fallback: `sensor.viewbank_temp`) for outdoor temperature
+- `sensor.gw3000c_humidity` (fallback: `sensor.viewbank_humidity`) for outdoor humidity
+- `sensor.climate_indoor_humidity` (fallback: `sensor.viewbank_humidity`) for indoor humidity
+
+The automation calculates wet bulb temperature inline using the Stull approximation. The evaporative cooler entities are ESPHome-based select entities that control mode and fan speed separately.
 
 ### Creating Required Input Entities
 
@@ -106,10 +112,16 @@ variables:
   fan_speed_entity: select.roofevap1_e90248_evap_fan_speed
   setpoint_entity: input_number.target_temperature
   auto_entity: input_boolean.automatic_control
-  outdoor_temp_entity: sensor.viewbank_temp
-  outdoor_humidity_entity: sensor.viewbank_humidity
+  
+  # Primary sensor entities with fallback support
+  outdoor_temp_entity_primary: sensor.gw3000c_outdoor_temperature
+  outdoor_temp_entity_fallback: sensor.viewbank_temp
+  outdoor_humidity_entity_primary: sensor.gw3000c_humidity
+  outdoor_humidity_entity_fallback: sensor.viewbank_humidity
   indoor_temperature_entity: sensor.home_temperature
-  indoor_humidity_entity: sensor.viewbank_humidity
+  indoor_humidity_entity_primary: sensor.climate_indoor_humidity
+  indoor_humidity_entity_fallback: sensor.viewbank_humidity
+  
   pad_drying_entity: input_number.pad_drying_progress
   
   # Optional constraints
