@@ -90,7 +90,8 @@ sequence:
       target_mode: |-
         {% set indoor_temp_delta_val = setpoint - indoor_temp %}
         {% set outdoor_temp_delta_val = outdoor_temp - setpoint %}
-        {% if current_mode == 'cool' and indoor_temp_delta_val >= 3.0 and diff < deadband_upper and outdoor_temp_delta_val <= (indoor_temp_delta_val / 2.0) %}
+        {% set humidity_diff = indoor_rh - outdoor_rh %}
+        {% if current_mode == 'cool' and indoor_temp_delta_val >= 3.0 and diff < deadband_upper and outdoor_temp_delta_val <= (indoor_temp_delta_val / 2.0) and humidity_diff > 10 and indoor_rh > 50 %}
           fan_only
         {% elif not is_at_target and diff < -0.3 and current_fan_speed <= 2 %}
           fan_only
@@ -104,7 +105,8 @@ sequence:
       target_speed: |-
         {% set indoor_temp_delta_val = setpoint - indoor_temp %}
         {% set outdoor_temp_delta_val = outdoor_temp - setpoint %}
-        {% set dehumidify_mode = current_mode == 'cool' and indoor_temp_delta_val >= 3.0 and diff < deadband_upper and outdoor_temp_delta_val <= (indoor_temp_delta_val / 2.0) %}
+        {% set humidity_diff = indoor_rh - outdoor_rh %}
+        {% set dehumidify_mode = current_mode == 'cool' and indoor_temp_delta_val >= 3.0 and diff < deadband_upper and outdoor_temp_delta_val <= (indoor_temp_delta_val / 2.0) and humidity_diff > 10 and indoor_rh > 50 %}
         {% if dehumidify_mode %}
           {# Dehumidify mode: reduce fan speed by 1 #}
           {{ [1, current_fan_speed - 1] | max }}

@@ -266,6 +266,8 @@ Main Automation Loop
 │    - Indoor temp >= 3°C below setpoint AND     │
 │    - Feels-like < deadband_upper AND           │
 │    - Outdoor temp delta <= half indoor delta   │
+│    - Indoor humidity - outdoor humidity > 10%  │
+│    - Indoor humidity > 50%                     │
 │    Then: switch to fan_only, fan speed -1      │
 │                                                │
 │  If temperature_change_per_minute available:   │

@@ -126,7 +126,7 @@ Inputs:
  
 Target Fan Speed Algorithm:
    Dehumidify Mode (highest priority):
-    If in cool mode and indoor_temp is 3°C or more below setpoint and feels_like is less than deadband_upper from setpoint and outdoor_temp delta from setpoint is within half of indoor_temp delta, then:
+    If in cool mode and indoor_temp is 3°C or more below setpoint and feels_like is less than deadband_upper from setpoint and outdoor_temp delta from setpoint is within half of indoor_temp delta and (indoor_humidity - outdoor_humidity) > 10 and indoor_humidity > 50, then:
      - Switch mode to fan_only
      - Decrease fan speed by 1 (capped to min fan speed of 1)
    
@@ -146,8 +146,9 @@ set:
   diff = feels_like_temp - setpoint_temp
   indoor_temp_delta = setpoint_temp - indoor_temp
   outdoor_temp_delta = outdoor_temp - setpoint_temp
+  humidity_diff = indoor_rh - outdoor_rh
   
-  target_mode = if (in cool mode and indoor_temp_delta >= 3 and diff < deadband_upper and outdoor_temp_delta <= indoor_temp_delta/2) then fan_only
+  target_mode = if (in cool mode and indoor_temp_delta >= 3 and diff < deadband_upper and outdoor_temp_delta <= indoor_temp_delta/2 and humidity_diff > 10 and indoor_rh > 50) then fan_only
                 else if (not at_target and diff < -0.9 and current_fan_speed <= 2) then fan_only 
                 else cool
   target_speed = target_speed_algorithm
