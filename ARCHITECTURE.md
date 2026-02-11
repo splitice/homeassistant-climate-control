@@ -261,6 +261,13 @@ Main Automation Loop
 │  Maintain Temperature Script Decision         │
 ├────────────────────────────────────────────────┤
 │                                                │
+│  Dehumidify Mode (highest priority):           │
+│    - If in cool mode AND                       │
+│    - Indoor temp >= 3°C below setpoint AND     │
+│    - Feels-like < deadband_upper AND           │
+│    - Outdoor temp delta <= half indoor delta   │
+│    Then: switch to fan_only, fan speed -1      │
+│                                                │
 │  If temperature_change_per_minute available:   │
 │    - diff > deadband_upper × 2: fan +1         │
 │    - diff < deadband_lower × 2: fan -1         │
