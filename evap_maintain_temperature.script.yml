@@ -87,8 +87,14 @@ sequence:
         {% endif %}
       current_feels_like: "{{ states('sensor.home_feels_like') }}"
       diff: "{{ current_feels_like - setpoint }}"
+      indoor_temp_delta: "{{ setpoint - indoor_temp }}"
+      outdoor_temp_delta: "{{ outdoor_temp - setpoint }}"
       target_mode: |-
-        {% if not is_at_target and diff < -0.3 and current_fan_speed <= 2 %}
+        {% set indoor_temp_delta_val = setpoint - indoor_temp %}
+        {% set outdoor_temp_delta_val = outdoor_temp - setpoint %}
+        {% if current_mode == 'cool' and indoor_temp_delta_val >= 3.0 and diff < deadband_upper and outdoor_temp_delta_val <= (indoor_temp_delta_val / 2.0) %}
+          fan_only
+        {% elif not is_at_target and diff < -0.3 and current_fan_speed <= 2 %}
           fan_only
         {% elif diff < 0 %}
           {{ current_mode }}
@@ -98,7 +104,13 @@ sequence:
           fan_only
         {% endif %}
       target_speed: |-
-        {% if temp_change_rate != -999 %}
+        {% set indoor_temp_delta_val = setpoint - indoor_temp %}
+        {% set outdoor_temp_delta_val = outdoor_temp - setpoint %}
+        {% set dehumidify_mode = current_mode == 'cool' and indoor_temp_delta_val >= 3.0 and diff < deadband_upper and outdoor_temp_delta_val <= (indoor_temp_delta_val / 2.0) %}
+        {% if dehumidify_mode %}
+          {# Dehumidify mode: reduce fan speed by 1 #}
+          {{ [1, current_fan_speed - 1] | max }}
+        {% elif temp_change_rate != -999 %}
           {# Use temperature change rate if available #}
           {% set min_speed = 0 if current_mode == 'off' else 1 %}
           {% if diff > (deadband_upper * 2) %}
