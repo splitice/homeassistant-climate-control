@@ -1,13 +1,9 @@
 alias: "Evap Automation (v4)"
 description: Main control loop for evaporative cooler with pad drying and maintain/get-to-target modes
 triggers:
-  - entity_id: input_boolean.automatic_control
-    to: "on"
+  - entity_id:
+      - input_select.evap_system_mode_user
     id: auto_on
-    trigger: state
-  - entity_id: input_boolean.automatic_control
-    to: "off"
-    id: auto_off
     trigger: state
   - event: start
     id: ha_start
@@ -16,7 +12,7 @@ variables:
   evap_entity: select.roofevap1_e90248_evap_mode
   fan_speed_entity: select.roofevap1_e90248_evap_fan_speed
   setpoint_entity: input_number.target_temperature
-  auto_entity: input_boolean.automatic_control
+  auto_entity: input_select.evap_system_mode_user
   outdoor_temp_entity_primary: sensor.gw3000c_outdoor_temperature
   outdoor_temp_entity_fallback: sensor.viewbank_temp
   outdoor_humidity_entity_primary: sensor.gw3000c_humidity
@@ -59,7 +55,7 @@ actions:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ is_state(auto_entity, 'off') }}"
+            value_template: "{{ not is_state(auto_entity, 'auto') }}"
         sequence:
           - target:
               entity_id: scene.evap_restore
