@@ -87,8 +87,6 @@ sequence:
         {% endif %}
       current_feels_like: "{{ states('sensor.home_feels_like') }}"
       diff: "{{ current_feels_like - setpoint }}"
-      indoor_temp_delta: "{{ setpoint - indoor_temp }}"
-      outdoor_temp_delta: "{{ outdoor_temp - setpoint }}"
       target_mode: |-
         {% set indoor_temp_delta_val = setpoint - indoor_temp %}
         {% set outdoor_temp_delta_val = outdoor_temp - setpoint %}
