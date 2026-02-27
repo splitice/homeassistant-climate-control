@@ -101,6 +101,8 @@ repeat while(auto_entity is on) {
         new_temperature_raw = state of indoor_temperature_entity
         elapsed_time = now() - start_wait in seconds
         temperature_change_per_minute = if elapsed_time > 5 then (new_temperature_raw - indoor_temp_raw) / (elapsed_time / 60) else -999
+        diff_change_per_minute = if elapsed_time > 5 and previous_diff is set then (diff - previous_diff) / (elapsed_time / 60) else -999
+        previous_diff = diff
     } 
 }
 
@@ -123,6 +125,7 @@ Inputs:
  - max_fan_speed_entity
  - min_fan_speed_entity
  - temperature_change_per_minute
+ - diff_change_per_minute
  
 Target Fan Speed Algorithm:
    Dehumidify Mode (highest priority):
@@ -133,6 +136,7 @@ Target Fan Speed Algorithm:
    If temperature_change_per_minute != -999
     If temperature difference is above deadband_upper * 2, increase fan speed by 1 (capped to max fan speed).
     else if temperature difference is below deadband_lower * 2, decrease fan speed by 1 (capped to min fan speed).
+    else if diff_change_per_minute > 0.1 (differential increasing) and diff >= deadband_lower (at or above setpoint), increase fan speed by 1 (preemptive cooling).
     else if temperature_change_per_minute < -0.25 (getting cooler) and diff < 0 (too cold), decrease fan speed by 1 (capped to min fan speed).
     else if temperature_change_per_minute > 0.25 (getting warmer) and diff > 0 (too warm), increase fan speed by 1 (capped to max fan speed).
    Else
