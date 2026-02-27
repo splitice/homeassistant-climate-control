@@ -55,11 +55,45 @@ variables:
   pad_drying_necessary: false
   turning_off_start: null
 actions:
+  # Manual control modes
+  
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ is_state(auto_entity, 'Fan Only') }}"
+        sequence:
+          - action: select.select_option
+            continue_on_error: true
+            data:
+              entity_id: "{{ evap_entity }}"
+              option: "fan_only"
+          - stop: Manual control - set to fan only
+      - conditions:
+          - condition: template
+            value_template: "{{ is_state(auto_entity, 'Cool') }}"
+        sequence:
+          - action: select.select_option
+            continue_on_error: true
+            data:
+              entity_id: "{{ evap_entity }}"
+              option: "cool"
+          - stop: Manual control - set to cool
+      - conditions:
+          - condition: template
+            value_template: "{{ is_state(auto_entity, 'Off') }}"
+        sequence:
+          - action: select.select_option
+            continue_on_error: true
+            data:
+              entity_id: "{{ evap_entity }}"
+              option: "off"
+          - stop: Manual control - turned off
+
   # Exit if automatic control is off
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ is_state(auto_entity, 'off') }}"
+            value_template: "{{ not is_state(auto_entity, 'Auto') }}"
         sequence:
           - target:
               entity_id: scene.evap_restore
@@ -86,7 +120,7 @@ actions:
   - repeat:
       while:
         - condition: template
-          value_template: "{{ is_state(auto_entity, 'on') }}"
+          value_template: "{{ is_state(auto_entity, 'Auto') }}"
       sequence:
         # Calculate current state variables
         - variables:
