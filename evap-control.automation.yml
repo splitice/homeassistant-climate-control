@@ -115,6 +115,9 @@ actions:
       temperature_change_per_minute: -999
       pad_drying_enabled: false
       alg_state: "initial"
+      previous_diff: null
+      previous_diff_time: null
+      diff_change_per_minute: -999
 
   # Main control loop
   - repeat:
@@ -189,6 +192,7 @@ actions:
                             min_fan_speed_entity: "{{ min_fan_speed_entity }}"
                             max_fan_speed_entity: "{{ max_fan_speed_entity }}"
                             temperature_change_per_minute: "{{ temperature_change_per_minute }}"
+                            diff_change_per_minute: "{{ diff_change_per_minute }}"
                             allowed_cool: "{{ allowed_cool_mode | bool }}"
                   # Get to target mode
                   default:
@@ -315,6 +319,7 @@ actions:
                     min_fan_speed_entity: "{{ min_fan_speed_entity }}"
                     max_fan_speed_entity: "{{ max_fan_speed_entity }}"
                     temperature_change_per_minute: "{{ temperature_change_per_minute }}"
+                    diff_change_per_minute: "{{ diff_change_per_minute }}"
                     allowed_cool: false
 
         # Record state after changes
@@ -383,5 +388,20 @@ actions:
               {% else %}
                 {{ unavailable }}
               {% endif %}
+            diff_change_per_minute: |-
+              {% set min_time = 5 %}
+              {% set unavailable = -999 %}
+              {% if previous_diff is not none and previous_diff != unavailable and previous_diff_time is not none %}
+                {% set diff_elapsed = (as_timestamp(now()) - previous_diff_time) | int %}
+                {% if diff_elapsed > min_time %}
+                  {{ (diff - previous_diff) / (diff_elapsed / 60) }}
+                {% else %}
+                  {{ unavailable }}
+                {% endif %}
+              {% else %}
+                {{ unavailable }}
+              {% endif %}
+            previous_diff: "{{ diff }}"
+            previous_diff_time: "{{ as_timestamp(now()) | int }}"
 
 mode: restart
