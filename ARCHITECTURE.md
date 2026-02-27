@@ -286,7 +286,13 @@ Main Automation Loop
 │      * not at_target AND                       │
 │      * diff < -0.9°C AND                       │
 │      * current_fan_speed <= 2                  │
-│    - Otherwise: stay in cool mode              │
+│    - Switch to cool if:                        │
+│      * outdoor_temp > indoor_temp AND          │
+│      * cool mode is allowed                    │
+│      (outdoor air hotter; fan_only warms house)│
+│    - If diff < 0: stay in current mode         │
+│    - If cool allowed: switch to cool           │
+│    - Otherwise: fan_only                       │
 │                                                │
 └────────────────────────────────────────────────┘
 ```
