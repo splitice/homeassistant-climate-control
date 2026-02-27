@@ -27,6 +27,7 @@ Used when temperature is within 1°C of setpoint:
 - Compares feels-like temperature at adjacent fan speeds to find optimal setting
 - Prevents frequent cycling with intelligent thresholds
 - **Dehumidify Mode**: When in cool mode and indoor temperature is 3°C or more below setpoint while feels-like temperature is comfortable, outdoor conditions are favorable, and indoor humidity is significantly higher than outdoor (>10% difference and >50% absolute), switches to fan_only mode with reduced fan speed to decrease humidity without overcooling
+- **Outdoor-Hotter Switching**: When outdoor temperature exceeds indoor temperature and cool mode is allowed, automatically switches to cool mode instead of increasing fan speed in fan_only mode — blowing hotter outdoor air indoors would warm the house, whereas evaporative cooling reduces supply air temperature below the outdoor dry-bulb temperature
 
 ### Pad Drying Mode
 Activated when cooling is no longer needed:

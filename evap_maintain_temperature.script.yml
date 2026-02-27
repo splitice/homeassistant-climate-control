@@ -95,6 +95,8 @@ sequence:
           fan_only
         {% elif not is_at_target and diff < -0.3 and current_fan_speed <= 2 %}
           fan_only
+        {% elif outdoor_temp > indoor_temp and allowed_cool %}
+          cool
         {% elif diff < 0 %}
           {{ current_mode }}
         {% elif allowed_cool %}
