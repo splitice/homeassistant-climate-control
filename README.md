@@ -26,6 +26,7 @@ Used when temperature is within 1°C of setpoint:
 - Uses temperature change rate when available for smoother control
 - Compares feels-like temperature at adjacent fan speeds to find optimal setting
 - Prevents frequent cycling with intelligent thresholds
+- **Dehumidify Mode**: When in cool mode and indoor temperature is 3°C or more below setpoint while feels-like temperature is comfortable, outdoor conditions are favorable, and indoor humidity is significantly higher than outdoor (>10% difference and >50% absolute), switches to fan_only mode with reduced fan speed to decrease humidity without overcooling
 
 ### Pad Drying Mode
 Activated when cooling is no longer needed:

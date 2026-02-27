@@ -125,6 +125,11 @@ Inputs:
  - temperature_change_per_minute
  
 Target Fan Speed Algorithm:
+   Dehumidify Mode (highest priority):
+    If in cool mode and indoor_temp is 3°C or more below setpoint and feels_like is less than deadband_upper from setpoint and outdoor_temp delta from setpoint is within half of indoor_temp delta and (indoor_humidity - outdoor_humidity) > 10 and indoor_humidity > 50, then:
+     - Switch mode to fan_only
+     - Decrease fan speed by 1 (capped to min fan speed of 1)
+   
    If temperature_change_per_minute != -999
     If temperature difference is above deadband_upper * 2, increase fan speed by 1 (capped to max fan speed).
     else if temperature difference is below deadband_lower * 2, decrease fan speed by 1 (capped to min fan speed).
@@ -139,7 +144,13 @@ set:
   air_temp = wet bulb temperature using outdoor_temp_entity, outdoor_humidity_entity
   feels_like_temp = feels like algorithm using wet_bulb_temp, indoor_humidity_entity
   diff = feels_like_temp - setpoint_temp
-  target_mode = if (not at_target and diff < -0.9 and current_fan_speed <= 2) then fan_only else cool
+  indoor_temp_delta = setpoint_temp - indoor_temp
+  outdoor_temp_delta = outdoor_temp - setpoint_temp
+  humidity_diff = indoor_rh - outdoor_rh
+  
+  target_mode = if (in cool mode and indoor_temp_delta >= 3 and diff < deadband_upper and outdoor_temp_delta <= indoor_temp_delta/2 and humidity_diff > 10 and indoor_rh > 50) then fan_only
+                else if (not at_target and diff < -0.9 and current_fan_speed <= 2) then fan_only 
+                else cool
   target_speed = target_speed_algorithm
 
 call set_evap_target: target_mode, target_speed, evap_entity, min_fan_speed_entity, max_fan_speed_entity
