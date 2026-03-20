@@ -1,28 +1,4 @@
-template:
-  - sensor:
-      - name: "Evaporative Suitability"
-        unique_id: evaporative_suitability
-        icon: mdi:air-conditioner
-        unit_of_measurement: "score"
-        availability: >-
-          {% set setpoint_entity =
-            'input_number.heatpump_feels_like_setpoint' %}
-          {% set feels_like_entity = 'sensor.home_feels_like' %}
-          {% set indoor_humidity_entity = 'sensor.climate_indoor_humidity' %}
-
-          {% set setpoint = states(setpoint_entity) | float(none) %}
-          {% set feels_like = states(feels_like_entity) | float(none) %}
-          {% set indoor_humidity =
-            states(indoor_humidity_entity) | float(none) %}
-
-          {{
-            setpoint is not none
-            and feels_like is not none
-            and indoor_humidity is not none
-          }}
-        state: >-
-          {% set setpoint_entity =
-            'input_number.heatpump_feels_like_setpoint' %}
+{% set setpoint_entity = 'input_number.heatpump_feels_like_setpoint' %}
           {% set feels_like_entity = 'sensor.home_feels_like' %}
           {% set battery_soc_entity = 'sensor.goodwe_battery_state_of_charge' %}
           {% set pv_power_entity = 'sensor.goodwe_pv_power' %}
@@ -63,8 +39,8 @@ template:
             {% set outdoor_humidity =
               [5, [outdoor_humidity, 100] | min] | max %}
 
-            {% set temp_diff = feels_like - setpoint %}
-            {% set base = temp_diff / 5 %}
+            {% set temp_diff = [0, feels_like - setpoint] | max %}
+            {% set base = 5 + (temp_diff / 5) %}
 
             {% if indoor_humidity < 30 and temp_diff > 0 and temp_diff <= 30 %}
               {% set base = [base, 5] | max %}
@@ -136,21 +112,17 @@ template:
             {% set previous_state = states.sensor.evaporative_suitability %}
             {% set previous =
               states('sensor.evaporative_suitability') | float(none) %}
-            {% if previous is none or previous_state is none %}
+            {% if true or previous is none or previous_state is none %}
               {{ raw | round(2) }}
             {% else %}
-              {% set now_ts = as_timestamp(now()) %}
-              {% set prev_ts = as_timestamp(previous_state.last_updated) %}
-              {% if now_ts is none or prev_ts is none %}
-                {{ raw | round(2) }}
-              {% else %}
-                {% set elapsed_seconds = [now_ts - prev_ts, 1] | max %}
-                {% set elapsed_ratio = elapsed_seconds / 300 %}
-                {% set max_delta = 0.25 * elapsed_ratio %}
-                {% set delta = raw - previous %}
-                {% set limited_delta = [delta, max_delta] | min %}
-                {% set limited_delta = [limited_delta, -max_delta] | max %}
-                {{ (previous + limited_delta) | round(2) }}
-              {% endif %}
+              {% set elapsed_seconds =
+                as_timestamp(now())
+                - as_timestamp(previous_state.last_updated) %}
+              {% set elapsed_ratio = [elapsed_seconds / 300, 0] | max %}
+              {% set max_delta = 0.25 * elapsed_ratio %}
+              {% set delta = raw - previous %}
+              {% set limited_delta = [delta, max_delta] | min %}
+              {% set limited_delta = [limited_delta, -max_delta] | max %}
+              {{ (previous + limited_delta) | round(2) }}
             {% endif %}
           {% endif %}
