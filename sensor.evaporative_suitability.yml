@@ -48,7 +48,7 @@ template:
             or feels_like is none
             or indoor_humidity is none
           %}
-            unavailable
+            {{ 'unavailable' }}
           {% else %}
             {% set battery_soc = states(battery_soc_entity) | float(50) %}
             {% set pv_power = states(pv_power_entity) | float(0) %}
