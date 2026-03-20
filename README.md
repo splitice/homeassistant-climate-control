@@ -10,6 +10,7 @@ This automation controls an evaporative cooler to maintain a target temperature 
 - **Adaptive Fan Control**: Fan speed adjusts based on temperature difference, wet bulb conditions, and temperature change rate
 - **Safe State Transitions**: Maximum 2-step fan speed changes with intelligent mode switching
 - **Snapshot/Restore**: Safely exits automation by restoring previous cooler state
+- **Evaporative Suitability Score**: Optional template sensor that scores evaporative cooling suitability from 0-10 with humidity, battery/solar, and outdoor-condition weighting
 
 ## Control Modes
 
@@ -67,6 +68,23 @@ The automation requires the following Home Assistant entities:
 ### Optional Entities
 - `input_number.min_fan_speed` - Minimum fan speed constraint (1-10)
 - `input_number.max_fan_speed` - Maximum fan speed constraint (1-10)
+
+### Optional Suitability Sensor Inputs
+
+If you install `sensor.evaporative_suitability.yml`, define these entities:
+
+- `input_number.heatpump_feels_like_setpoint`
+- `sensor.home_feels_like`
+- `sensor.goodwe_battery_state_of_charge`
+- `sensor.goodwe_pv_power`
+- `sensor.goodwe_house_consumption`
+- `sensor.climate_indoor_humidity`
+- `sensor.gw3000c_humidity`
+- `sensor.gw3000c_outdoor_temperature`
+- `sensor.upper_floor_avg_temperature`
+- `sensor.develco_products_a_s_moszb_140_temperature_2`
+
+The sensor updates as source entities change and is rate-limited to a maximum slope of ±0.25 points per 5 minutes.
 
 **Note**: The automation uses the following sensors with automatic fallback to viewbank sensors if unavailable:
 - `sensor.gw3000c_outdoor_temperature` (fallback: `sensor.viewbank_temp`) for outdoor temperature
@@ -205,4 +223,3 @@ Old v3 files are preserved with `.v3.yml` extension for reference.
 ## Contributing
 
 See `IMPLEMENTATION.v4.md` for detailed specification and architecture documentation.
-

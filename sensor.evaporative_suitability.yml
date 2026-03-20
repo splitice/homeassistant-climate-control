@@ -1,0 +1,128 @@
+{% set setpoint_entity = 'input_number.heatpump_feels_like_setpoint' %}
+          {% set feels_like_entity = 'sensor.home_feels_like' %}
+          {% set battery_soc_entity = 'sensor.goodwe_battery_state_of_charge' %}
+          {% set pv_power_entity = 'sensor.goodwe_pv_power' %}
+          {% set house_consumption_entity = 'sensor.goodwe_house_consumption' %}
+          {% set indoor_humidity_entity = 'sensor.climate_indoor_humidity' %}
+          {% set outdoor_humidity_entity = 'sensor.gw3000c_humidity' %}
+          {% set outdoor_temp_entity = 'sensor.gw3000c_outdoor_temperature' %}
+          {% set upper_floor_temp_entity =
+            'sensor.upper_floor_avg_temperature' %}
+          {% set rumpus_temp_entity =
+            'sensor.develco_products_a_s_moszb_140_temperature_2' %}
+
+          {% set setpoint = states(setpoint_entity) | float(none) %}
+          {% set feels_like = states(feels_like_entity) | float(none) %}
+          {% set indoor_humidity =
+            states(indoor_humidity_entity) | float(none) %}
+
+          {% if
+            setpoint is none
+            or feels_like is none
+            or indoor_humidity is none
+          %}
+            {{ 'unavailable' }}
+          {% else %}
+            {% set battery_soc = states(battery_soc_entity) | float(50) %}
+            {% set pv_power = states(pv_power_entity) | float(0) %}
+            {% set house_consumption =
+              states(house_consumption_entity) | float(0) %}
+
+            {% set upper_floor_temp =
+              states(upper_floor_temp_entity) | float(feels_like) %}
+            {% set rumpus_temp =
+              states(rumpus_temp_entity) | float(upper_floor_temp) %}
+            {% set outdoor_temp =
+              states(outdoor_temp_entity) | float(upper_floor_temp) %}
+            {% set outdoor_humidity =
+              states(outdoor_humidity_entity) | float(50) %}
+            {% set outdoor_humidity =
+              [5, [outdoor_humidity, 100] | min] | max %}
+
+            {% set temp_diff = [0, feels_like - setpoint] | max %}
+            {% set base = 5 + (temp_diff / 5) %}
+
+            {% if indoor_humidity < 30 and temp_diff > 0 and temp_diff <= 30 %}
+              {% set base = [base, 5] | max %}
+            {% endif %}
+
+            {% set score = base %}
+
+            {% set twb =
+              (
+                (outdoor_temp *
+                  ((0.151977 * (outdoor_humidity + 8.313659) ** 0.5) | atan)
+                )
+                + ((outdoor_temp + outdoor_humidity) | atan)
+                - ((outdoor_humidity - 1.676331) | atan)
+                + (
+                  0.00391838
+                  * outdoor_humidity ** 1.5
+                  * ((0.023101 * outdoor_humidity) | atan)
+                )
+                - 4.686035
+              )
+            %}
+            {% set wet_bulb_depression = outdoor_temp - twb %}
+
+            {% set wet_bulb_points =
+              [0, [((wet_bulb_depression - 4) / 3), 2.5] | min] | max %}
+            {% set dry_air_points =
+              [0, [((50 - outdoor_humidity) / 15), 2] | min] | max %}
+            {% set score = score + wet_bulb_points + dry_air_points %}
+
+            {% set cooler_outdoor_points =
+              [0, [((upper_floor_temp - outdoor_temp) / 2), 2] | min] | max %}
+            {% set score = score + cooler_outdoor_points %}
+
+            {% set rumpus_delta = rumpus_temp - upper_floor_temp %}
+            {% set rumpus_points = [0, [rumpus_delta, 5] | min] | max %}
+            {% set score = score + rumpus_points %}
+
+            {% if pv_power > house_consumption %}
+              {% set score = score + 1 %}
+            {% elif house_consumption > pv_power %}
+              {% set score = score - 1 %}
+            {% endif %}
+
+            {% if battery_soc > 80 and pv_power > house_consumption %}
+              {% set score = score - 5 %}
+            {% elif battery_soc > 70 and pv_power > house_consumption %}
+              {% set score = score - 3 %}
+            {% endif %}
+
+            {% if battery_soc < 15 %}
+              {% set score = score - 4 %}
+            {% endif %}
+
+            {% set humidity_cap = 10 %}
+            {% if indoor_humidity > 85 %}
+              {% set humidity_cap = 0 %}
+            {% elif indoor_humidity > 75 %}
+              {% set humidity_cap =
+                4 * ((85 - indoor_humidity) / 10) %}
+            {% elif indoor_humidity > 65 %}
+              {% set humidity_cap =
+                4 + (3 * ((75 - indoor_humidity) / 10)) %}
+            {% endif %}
+
+            {% set raw =
+              [0, [[score, humidity_cap] | min, 10] | min] | max %}
+
+            {% set previous_state = states.sensor.evaporative_suitability %}
+            {% set previous =
+              states('sensor.evaporative_suitability') | float(none) %}
+            {% if true or previous is none or previous_state is none %}
+              {{ raw | round(2) }}
+            {% else %}
+              {% set elapsed_seconds =
+                as_timestamp(now())
+                - as_timestamp(previous_state.last_updated) %}
+              {% set elapsed_ratio = [elapsed_seconds / 300, 0] | max %}
+              {% set max_delta = 0.25 * elapsed_ratio %}
+              {% set delta = raw - previous %}
+              {% set limited_delta = [delta, max_delta] | min %}
+              {% set limited_delta = [limited_delta, -max_delta] | max %}
+              {{ (previous + limited_delta) | round(2) }}
+            {% endif %}
+          {% endif %}
