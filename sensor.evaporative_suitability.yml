@@ -139,14 +139,18 @@ template:
             {% if previous is none or previous_state is none %}
               {{ raw | round(2) }}
             {% else %}
-              {% set elapsed_seconds =
-                as_timestamp(now())
-                - as_timestamp(previous_state.last_updated) %}
-              {% set elapsed_ratio = [elapsed_seconds / 300, 0] | max %}
-              {% set max_delta = 0.25 * elapsed_ratio %}
-              {% set delta = raw - previous %}
-              {% set limited_delta = [delta, max_delta] | min %}
-              {% set limited_delta = [limited_delta, -max_delta] | max %}
-              {{ (previous + limited_delta) | round(2) }}
+              {% set now_ts = as_timestamp(now()) %}
+              {% set prev_ts = as_timestamp(previous_state.last_updated) %}
+              {% if now_ts is none or prev_ts is none %}
+                {{ raw | round(2) }}
+              {% else %}
+                {% set elapsed_seconds = [now_ts - prev_ts, 1] | max %}
+                {% set elapsed_ratio = elapsed_seconds / 300 %}
+                {% set max_delta = 0.25 * elapsed_ratio %}
+                {% set delta = raw - previous %}
+                {% set limited_delta = [delta, max_delta] | min %}
+                {% set limited_delta = [limited_delta, -max_delta] | max %}
+                {{ (previous + limited_delta) | round(2) }}
+              {% endif %}
             {% endif %}
           {% endif %}
