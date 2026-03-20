@@ -69,7 +69,7 @@ template:
             {% set temp_diff = feels_like - setpoint %}
             {% set base = temp_diff / 5 %}
 
-            {% if indoor_humidity < 30 and temp_diff <= 30 %}
+            {% if indoor_humidity < 30 and temp_diff > 0 and temp_diff <= 30 %}
               {% set base = [base, 5] | max %}
             {% endif %}
 
