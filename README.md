@@ -84,7 +84,7 @@ If you install `sensor.evaporative_suitability.yml`, define these entities:
 - `sensor.upper_floor_avg_temperature`
 - `sensor.develco_products_a_s_moszb_140_temperature_2`
 
-The sensor updates every 5 minutes and is rate-limited to a maximum change of ±0.25 points per update.
+The sensor updates as source entities change and is rate-limited to a maximum slope of ±0.25 points per 5 minutes.
 
 **Note**: The automation uses the following sensors with automatic fallback to viewbank sensors if unavailable:
 - `sensor.gw3000c_outdoor_temperature` (fallback: `sensor.viewbank_temp`) for outdoor temperature

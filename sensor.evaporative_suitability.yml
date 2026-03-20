@@ -1,8 +1,5 @@
 template:
-  - trigger:
-      - platform: time_pattern
-        minutes: "/5"
-    sensor:
+  - sensor:
       - name: "Evaporative Suitability"
         unique_id: evaporative_suitability
         icon: mdi:air-conditioner
@@ -136,14 +133,20 @@ template:
             {% set raw =
               [0, [[score, humidity_cap] | min, 10] | min] | max %}
 
+            {% set previous_state = states.sensor.evaporative_suitability %}
             {% set previous =
               states('sensor.evaporative_suitability') | float(none) %}
-            {% if previous is none %}
+            {% if previous is none or previous_state is none %}
               {{ raw | round(2) }}
             {% else %}
+              {% set elapsed_seconds =
+                as_timestamp(now())
+                - as_timestamp(previous_state.last_updated) %}
+              {% set elapsed_ratio = [elapsed_seconds / 300, 0] | max %}
+              {% set max_delta = 0.25 * elapsed_ratio %}
               {% set delta = raw - previous %}
-              {% set limited_delta = [delta, 0.25] | min %}
-              {% set limited_delta = [limited_delta, -0.25] | max %}
+              {% set limited_delta = [delta, max_delta] | min %}
+              {% set limited_delta = [limited_delta, -max_delta] | max %}
               {{ (previous + limited_delta) | round(2) }}
             {% endif %}
           {% endif %}
