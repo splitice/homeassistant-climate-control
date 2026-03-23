@@ -10,7 +10,7 @@ This automation controls an evaporative cooler to maintain a target temperature 
 - **Adaptive Fan Control**: Fan speed adjusts based on temperature difference, wet bulb conditions, and temperature change rate
 - **Safe State Transitions**: Maximum 2-step fan speed changes with intelligent mode switching
 - **Snapshot/Restore**: Safely exits automation by restoring previous cooler state
-- **Evaporative Suitability Score**: Optional template sensor that scores evaporative cooling suitability from 0-10 with humidity, battery/solar, and outdoor-condition weighting
+- **Evaporative Suitability Score**: Optional template sensor that scores evaporative cooling suitability from 1-10 with humidity, battery/solar, outdoor-condition weighting, and an evening bias
 
 ## Control Modes
 

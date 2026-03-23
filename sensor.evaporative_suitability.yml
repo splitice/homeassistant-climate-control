@@ -95,6 +95,27 @@
               {% set score = score - 4 %}
             {% endif %}
 
+            {% set hour = now().hour %}
+            {% if hour >= 19 and hour < 22 %}
+              {% set score = score + 0.75 %}
+            {% elif hour >= 22 %}
+              {% set score = score + 1.25 %}
+            {% endif %}
+
+            {% set outside_setpoint_gap = outdoor_temp - setpoint %}
+            {% set outside_points = 0 %}
+            {% if outside_setpoint_gap <= 3 %}
+              {% set outside_points =
+                [((3 - outside_setpoint_gap) / 3), 2] | min %}
+            {% endif %}
+            {% if outside_setpoint_gap < 0 %}
+              {% set outside_points =
+                outside_points + ([((-outside_setpoint_gap) / 2), 2] | min) %}
+            {% endif %}
+            {% set score = score + outside_points %}
+
+            {% set score = 5 + ((score - 5) * 1.35) %}
+
             {% set humidity_cap = 10 %}
             {% if indoor_humidity > 85 %}
               {% set humidity_cap = 0 %}
@@ -107,7 +128,7 @@
             {% endif %}
 
             {% set raw =
-              [0, [[score, humidity_cap] | min, 10] | min] | max %}
+              [1, [[score, humidity_cap] | min, 10] | min] | max %}
 
             {% set previous_state = states.sensor.evaporative_suitability %}
             {% set previous =
