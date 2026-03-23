@@ -95,6 +95,43 @@
               {% set score = score - 4 %}
             {% endif %}
 
+            {% set hour = now().hour %}
+            {% set evening_start_hour = 19 %}
+            {% set late_evening_hour = 22 %}
+            {% set evening_bonus = 0.75 %}
+            {% set late_evening_bonus = 1.25 %}
+            {# Later in the evening, increase suitability modestly to favor
+               overnight pre-cooling without overpowering daytime weighting. #}
+            {% if hour >= evening_start_hour and hour < late_evening_hour %}
+              {% set score = score + evening_bonus %}
+            {% elif hour >= late_evening_hour %}
+              {% set score = score + late_evening_bonus %}
+            {% endif %}
+
+            {% set outside_setpoint_gap = outdoor_temp - setpoint %}
+            {% set setpoint_proximity_threshold = 3 %}
+            {% set outside_points = 0 %}
+            {% if outside_setpoint_gap <= setpoint_proximity_threshold %}
+              {% set outside_points =
+                [
+                  ((setpoint_proximity_threshold - outside_setpoint_gap)
+                  / setpoint_proximity_threshold),
+                  2
+                ] | min %}
+            {% endif %}
+            {% if outside_setpoint_gap < 0 %}
+              {% set outside_points =
+                outside_points + ([((-outside_setpoint_gap) / 2), 2] | min) %}
+            {% endif %}
+            {% set score = score + outside_points %}
+
+            {% set spread_midpoint = 5 %}
+            {% set spread_multiplier = 1.35 %}
+            {# Expand spread around midpoint so values use 1-10 more effectively
+               while preserving ordering before final clamping/caps. #}
+            {% set score =
+              spread_midpoint + ((score - spread_midpoint) * spread_multiplier) %}
+
             {% set humidity_cap = 10 %}
             {% if indoor_humidity > 85 %}
               {% set humidity_cap = 0 %}
@@ -107,7 +144,7 @@
             {% endif %}
 
             {% set raw =
-              [0, [[score, humidity_cap] | min, 10] | min] | max %}
+              [1, [[score, humidity_cap] | min, 10] | min] | max %}
 
             {% set previous_state = states.sensor.evaporative_suitability %}
             {% set previous =
