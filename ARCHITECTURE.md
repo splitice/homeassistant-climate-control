@@ -273,6 +273,8 @@ Main Automation Loop
 │  If temperature_change_per_minute available:   │
 │    - diff > deadband_upper × 2: fan +1         │
 │    - diff < deadband_lower × 2: fan -1         │
+│    - diff_change_rate > 0.1 AND diff >= 0:     │
+│        fan +1 (differential rising, preemptive)│
 │    - cooling & diff < 0: fan -1                │
 │    - warming & diff > 0: fan +1                │
 │                                                │
@@ -378,6 +380,8 @@ Main Automation Loop
 │                                                 │
 │ Max fan speed change:       ±2 steps per cycle  │
 │ Temperature change reliable: elapsed > 5 sec    │
+│ Differential tracking:      diff_change_rate    │
+│                             threshold 0.1°C/min │
 │                                                 │
 └─────────────────────────────────────────────────┘
 ```
